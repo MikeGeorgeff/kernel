@@ -44,10 +44,10 @@ interface KernelInterface
     /**
      * Add a container definition
      *
-     * @param string   $id
-     * @param callable $factory
-     * @param bool     $shared
-     * @param string[] $aliases
+     * @param string                               $id
+     * @param callable(ContainerInterface): mixed  $factory
+     * @param bool                                 $shared
+     * @param string[]                             $aliases
      *
      * @return static
      */
