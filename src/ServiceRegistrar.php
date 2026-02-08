@@ -9,10 +9,10 @@ interface ServiceRegistrar
     /**
      * Register a service with the container
      *
-     * @param string   $id
-     * @param callable $factory
-     * @param bool     $shared
-     * @param string[] $aliases
+     * @param string                               $id
+     * @param callable(ContainerInterface): mixed  $factory
+     * @param bool                                 $shared
+     * @param string[]                             $aliases
      *
      * @return void
      */
