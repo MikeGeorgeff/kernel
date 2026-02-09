@@ -59,20 +59,45 @@ $kernel->addDefinition(
 
 Definitions registered later with the same ID will overwrite earlier ones, allowing base definitions to be overridden.
 
-### Event Dispatching
+### Lifecycle Callbacks
 
-Pass a PSR-14 event dispatcher to receive lifecycle events:
+Register callbacks to hook into the kernel boot lifecycle:
 
 ```php
-$kernel = new Kernel(Environment::Production, dispatcher: $dispatcher);
+$kernel = new Kernel(Environment::Production);
+
+$kernel
+    ->onBooting(function (KernelInterface $kernel) {
+        // Called during boot, before services are registered
+        // $kernel->isBooting() === true
+    })
+    ->onBooted(function (KernelInterface $kernel) {
+        // Called after boot completes
+        // $kernel->isBooted() === true
+        // $kernel->getContainer() is accessible
+    });
+
+$kernel->boot();
 ```
 
-Two events are dispatched during boot:
+`onBooting` callbacks must be registered before boot. `onBooted` callbacks can be registered before or during boot, which allows an `onBooting` callback to register additional `onBooted` callbacks:
 
-- `KernelBooting` - dispatched at the start of boot, before services are registered
-- `KernelBooted` - dispatched after boot completes, container is accessible
+```php
+$kernel->onBooting(function (KernelInterface $kernel) {
+    $kernel->onBooted(function (KernelInterface $kernel) {
+        // runs after boot completes
+    });
+});
+```
 
-When provided, the dispatcher is registered in the container as `event.dispatcher` with an `EventDispatcherInterface` alias.
+Both methods return the kernel for fluent chaining with `addDefinition`:
+
+```php
+$kernel
+    ->onBooting(function (KernelInterface $kernel) { /* ... */ })
+    ->addDefinition('logger', fn() => new FileLogger(), shared: true)
+    ->onBooted(function (KernelInterface $kernel) { /* ... */ });
+```
 
 ### Custom Service Registrar
 
@@ -88,10 +113,6 @@ $kernel = new Kernel(Environment::Production, $registrar);
 The kernel registers itself in the container during boot:
 
 - `kernel` (aliased to `KernelInterface`)
-
-When an event dispatcher is provided:
-
-- `event.dispatcher` (aliased to `EventDispatcherInterface`)
 
 These IDs cannot be overwritten via `addDefinition`.
 

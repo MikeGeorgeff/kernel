@@ -3,7 +3,6 @@
 namespace Georgeff\Kernel;
 
 use Psr\Container\ContainerInterface;
-use Psr\EventDispatcher\EventDispatcherInterface;
 
 class Kernel implements KernelInterface
 {
@@ -16,8 +15,6 @@ class Kernel implements KernelInterface
 
     protected ?ContainerInterface $container = null;
 
-    protected ?EventDispatcherInterface $event = null;
-
     protected Environment $environment;
 
     protected bool $debug;
@@ -26,15 +23,18 @@ class Kernel implements KernelInterface
 
     protected bool $booting = false;
 
+    /**
+     * @var array{'pre.boot': array<callable(KernelInterface): void>, 'post.boot': array<callable(KernelInterface): void>}
+     */
+    protected array $bootLifecycleCallbacks = ['pre.boot' => [], 'post.boot' => []];
+
     public function __construct(
         Environment $environment,
         ?ServiceRegistrar $registrar = null,
-        ?EventDispatcherInterface $dispatcher = null,
         bool $debug = false,
     ) {
         $this->environment = $environment;
         $this->registrar   = $registrar ?: new DefaultServiceRegistrar();
-        $this->event       = $dispatcher;
         $this->debug       = $debug;
     }
 
@@ -49,13 +49,11 @@ class Kernel implements KernelInterface
 
         $this->booting = true;
 
-        $this->dispatchKernelEvent(new Event\KernelBooting($this));
+        foreach ($this->bootLifecycleCallbacks['pre.boot'] as $preBoot) {
+            $preBoot($this);
+        }
 
         $this->registrar->register('kernel', fn() => $this, true, [KernelInterface::class]);
-
-        if ($this->event) {
-            $this->registrar->register('event.dispatcher', fn() => $this->event, true, [EventDispatcherInterface::class]);
-        }
 
         foreach ($this->definitions as $id => $definition) {
             $this->registrar->register(
@@ -72,7 +70,9 @@ class Kernel implements KernelInterface
 
         $this->booted = true;
 
-        $this->dispatchKernelEvent(new Event\KernelBooted($this));
+        foreach ($this->bootLifecycleCallbacks['post.boot'] as $postBoot) {
+            $postBoot($this);
+        }
     }
 
     /**
@@ -89,6 +89,34 @@ class Kernel implements KernelInterface
     public function isBooted(): bool
     {
         return $this->booted;
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function onBooting(callable $callback): static
+    {
+        if ($this->isBooting() || $this->isBooted()) {
+            throw new KernelException('Kernel has started booting, callbacks can no longer be registered');
+        }
+
+        $this->bootLifecycleCallbacks['pre.boot'][] = $callback;
+
+        return $this;
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function onBooted(callable $callback): static
+    {
+        if ($this->isBooted()) {
+            throw new KernelException('Kernel has already been booted, callbacks can no longer be registered');
+        }
+
+        $this->bootLifecycleCallbacks['post.boot'][] = $callback;
+
+        return $this;
     }
 
     /**
@@ -118,10 +146,6 @@ class Kernel implements KernelInterface
 
         $reserved = ['kernel', KernelInterface::class];
 
-        if ($this->event) {
-            array_push($reserved, 'event.dispatcher', EventDispatcherInterface::class);
-        }
-
         if (in_array($id, $reserved, true) || array_intersect($reserved, $aliases)) {
             throw new KernelException('Cannot overwrite a reserved service definition');
         }
@@ -133,13 +157,6 @@ class Kernel implements KernelInterface
         ];
 
         return $this;
-    }
-
-    protected function dispatchKernelEvent(Event\KernelEvent $event): void
-    {
-        if ($this->event) {
-            $this->event->dispatch($event);
-        }
     }
 
     /**

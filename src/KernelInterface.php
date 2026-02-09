@@ -28,6 +28,24 @@ interface KernelInterface
     public function isBooted(): bool;
 
     /**
+     * Register a pre-boot callback
+     *
+     * @param callable(KernelInterface): void $callback
+     *
+     * @return static
+     */
+    public function onBooting(callable $callback): static;
+
+    /**
+     * Register a post-boot callback
+     *
+     * @param callable(KernelInterface): void $callback
+     *
+     * @return static
+     */
+    public function onBooted(callable $callback): static;
+
+    /**
      * Get the kernel environment
      *
      * @return string
