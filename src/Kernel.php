@@ -3,15 +3,18 @@
 namespace Georgeff\Kernel;
 
 use Psr\Container\ContainerInterface;
+use Psr\EventDispatcher\EventDispatcherInterface;
 
 class Kernel implements KernelInterface
 {
+    protected ?float $startTime = null;
+
     /**
      * @var array<string, array{factory: callable, shared: bool, aliases: string[]}>
      */
-    protected array $definitions = [];
+    private array $definitions = [];
 
-    protected ServiceRegistrar $registrar;
+    private ServiceRegistrar $registrar;
 
     protected ?ContainerInterface $container = null;
 
@@ -21,12 +24,10 @@ class Kernel implements KernelInterface
 
     protected bool $booted = false;
 
-    protected bool $booting = false;
-
     /**
-     * @var array{'pre.boot': array<callable(KernelInterface): void>, 'post.boot': array<callable(KernelInterface): void>}
+     * @var array<callable(KernelInterface): void>
      */
-    protected array $bootLifecycleCallbacks = ['pre.boot' => [], 'post.boot' => []];
+    private array $preBootCallbacks = [];
 
     public function __construct(
         Environment $environment,
@@ -38,6 +39,27 @@ class Kernel implements KernelInterface
         $this->debug       = $debug;
     }
 
+    protected function dispatchKernelEvent(Event\KernelEvent $event): void
+    {
+        if ($this->container && $this->container->has(EventDispatcherInterface::class)) {
+            /** @var \Psr\EventDispatcher\EventDispatcherInterface $dispatcher */
+            $dispatcher = $this->container->get(EventDispatcherInterface::class);
+
+            $dispatcher->dispatch($event);
+        }
+    }
+
+    private function preBoot(): void
+    {
+        if ($this->isDebug()) {
+            $this->startTime = microtime(true);
+        }
+
+        foreach ($this->preBootCallbacks as $callback) {
+            $callback($this);
+        }
+    }
+
     /**
      * @inheritdoc
      */
@@ -47,13 +69,11 @@ class Kernel implements KernelInterface
             return;
         }
 
-        $this->booting = true;
-
-        foreach ($this->bootLifecycleCallbacks['pre.boot'] as $preBoot) {
-            $preBoot($this);
-        }
+        $this->preBoot();
 
         $this->registrar->register('kernel', fn() => $this, true, [KernelInterface::class]);
+        $this->registrar->register('kernel.environment', fn() => $this->getEnvironment(), true);
+        $this->registrar->register('kernel.debug', fn() => $this->isDebug(), true);
 
         foreach ($this->definitions as $id => $definition) {
             $this->registrar->register(
@@ -66,21 +86,9 @@ class Kernel implements KernelInterface
 
         $this->container = $this->registrar->getContainer();
 
-        $this->booting = false;
-
         $this->booted = true;
 
-        foreach ($this->bootLifecycleCallbacks['post.boot'] as $postBoot) {
-            $postBoot($this);
-        }
-    }
-
-    /**
-     * @inheritdoc
-     */
-    public function isBooting(): bool
-    {
-        return $this->booting;
+        $this->dispatchKernelEvent(new Event\KernelBooted($this));
     }
 
     /**
@@ -89,34 +97,6 @@ class Kernel implements KernelInterface
     public function isBooted(): bool
     {
         return $this->booted;
-    }
-
-    /**
-     * @inheritdoc
-     */
-    public function onBooting(callable $callback): static
-    {
-        if ($this->isBooting() || $this->isBooted()) {
-            throw new KernelException('Kernel has started booting, callbacks can no longer be registered');
-        }
-
-        $this->bootLifecycleCallbacks['pre.boot'][] = $callback;
-
-        return $this;
-    }
-
-    /**
-     * @inheritdoc
-     */
-    public function onBooted(callable $callback): static
-    {
-        if ($this->isBooted()) {
-            throw new KernelException('Kernel has already been booted, callbacks can no longer be registered');
-        }
-
-        $this->bootLifecycleCallbacks['post.boot'][] = $callback;
-
-        return $this;
     }
 
     /**
@@ -133,6 +113,20 @@ class Kernel implements KernelInterface
     public function getEnvironment(): string
     {
         return $this->environment->value;
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function onBooting(callable $callback): static
+    {
+        if ($this->isBooted()) {
+            throw new KernelException('Kernel has already been booted, cannot add new pre-boot callbacks');
+        }
+
+        $this->preBootCallbacks[] = $callback;
+
+        return $this;
     }
 
     /**
@@ -169,5 +163,13 @@ class Kernel implements KernelInterface
         }
 
         return $this->container;
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function getStartTime(): float
+    {
+        return $this->isDebug() && null !== $this->startTime ? $this->startTime : -INF;
     }
 }

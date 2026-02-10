@@ -3,12 +3,14 @@
 namespace Georgeff\Kernel\Test;
 
 use Georgeff\Kernel\Environment;
+use Georgeff\Kernel\Event\KernelBooted;
 use Georgeff\Kernel\Kernel;
 use Georgeff\Kernel\KernelException;
 use Georgeff\Kernel\KernelInterface;
 use Georgeff\Kernel\ServiceRegistrar;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
+use Psr\EventDispatcher\EventDispatcherInterface;
 
 class KernelTest extends TestCase
 {
@@ -54,7 +56,6 @@ class KernelTest extends TestCase
         $kernel = new Kernel(Environment::Testing);
 
         $this->assertFalse($kernel->isBooted());
-        $this->assertFalse($kernel->isBooting());
     }
 
     public function test_it_boots(): void
@@ -63,7 +64,6 @@ class KernelTest extends TestCase
         $kernel->boot();
 
         $this->assertTrue($kernel->isBooted());
-        $this->assertFalse($kernel->isBooting());
     }
 
     public function test_boot_is_idempotent(): void
@@ -241,18 +241,18 @@ class KernelTest extends TestCase
         $this->assertTrue($called);
     }
 
-    public function test_on_booting_callback_receives_booting_kernel(): void
+    public function test_on_booting_callback_receives_kernel(): void
     {
-        $wasBooting = null;
+        $received = null;
 
         $kernel = new Kernel(Environment::Testing);
-        $kernel->onBooting(function (KernelInterface $k) use (&$wasBooting) {
-            $wasBooting = $k->isBooting();
+        $kernel->onBooting(function (KernelInterface $k) use (&$received) {
+            $received = $k;
         });
 
         $kernel->boot();
 
-        $this->assertTrue($wasBooting);
+        $this->assertSame($kernel, $received);
     }
 
     public function test_multiple_on_booting_callbacks_are_called_in_order(): void
@@ -287,139 +287,124 @@ class KernelTest extends TestCase
         $kernel->boot();
 
         $this->expectException(KernelException::class);
-        $this->expectExceptionMessage('Kernel has started booting, callbacks can no longer be registered');
+        $this->expectExceptionMessage('Kernel has already been booted, cannot add new pre-boot callbacks');
 
         $kernel->onBooting(function () {});
     }
 
-    public function test_it_throws_when_registering_on_booting_during_boot(): void
-    {
-        $kernel = new Kernel(Environment::Testing);
-        $kernel->onBooting(function (KernelInterface $k) {
-            $k->onBooting(function () {});
-        });
-
-        $this->expectException(KernelException::class);
-        $this->expectExceptionMessage('Kernel has started booting, callbacks can no longer be registered');
-
-        $kernel->boot();
-    }
-
-    public function test_on_booted_callback_is_called_during_boot(): void
-    {
-        $called = false;
-
-        $kernel = new Kernel(Environment::Testing);
-        $kernel->onBooted(function (KernelInterface $k) use (&$called) {
-            $called = true;
-        });
-
-        $kernel->boot();
-
-        $this->assertTrue($called);
-    }
-
-    public function test_on_booted_callback_receives_booted_kernel(): void
-    {
-        $wasBooted = null;
-
-        $kernel = new Kernel(Environment::Testing);
-        $kernel->onBooted(function (KernelInterface $k) use (&$wasBooted) {
-            $wasBooted = $k->isBooted();
-        });
-
-        $kernel->boot();
-
-        $this->assertTrue($wasBooted);
-    }
-
-    public function test_on_booted_callback_can_access_container(): void
-    {
-        $container = null;
-
-        $kernel = new Kernel(Environment::Testing);
-        $kernel->onBooted(function (KernelInterface $k) use (&$container) {
-            $container = $k->getContainer();
-        });
-
-        $kernel->boot();
-
-        $this->assertInstanceOf(ContainerInterface::class, $container);
-    }
-
-    public function test_multiple_on_booted_callbacks_are_called_in_order(): void
-    {
-        $order = [];
-
-        $kernel = new Kernel(Environment::Testing);
-        $kernel->onBooted(function () use (&$order) {
-            $order[] = 'first';
-        });
-        $kernel->onBooted(function () use (&$order) {
-            $order[] = 'second';
-        });
-
-        $kernel->boot();
-
-        $this->assertSame(['first', 'second'], $order);
-    }
-
-    public function test_on_booted_returns_the_kernel(): void
-    {
-        $kernel = new Kernel(Environment::Testing);
-
-        $result = $kernel->onBooted(function () {});
-
-        $this->assertSame($kernel, $result);
-    }
-
-    public function test_it_throws_when_registering_on_booted_after_boot(): void
-    {
-        $kernel = new Kernel(Environment::Testing);
-        $kernel->boot();
-
-        $this->expectException(KernelException::class);
-        $this->expectExceptionMessage('Kernel has already been booted, callbacks can no longer be registered');
-
-        $kernel->onBooted(function () {});
-    }
-
-    public function test_on_booted_can_be_registered_during_booting(): void
-    {
-        $bootedCalled = false;
-
-        $kernel = new Kernel(Environment::Testing);
-        $kernel->onBooting(function (KernelInterface $k) use (&$bootedCalled) {
-            $k->onBooted(function () use (&$bootedCalled) {
-                $bootedCalled = true;
-            });
-        });
-
-        $kernel->boot();
-
-        $this->assertTrue($bootedCalled);
-    }
-
-    public function test_on_booting_and_on_booted_are_fluent_with_add_definition(): void
+    public function test_on_booting_and_add_definition_are_fluent(): void
     {
         $bootingCalled = false;
-        $bootedCalled = false;
 
         $kernel = new Kernel(Environment::Testing);
         $kernel
             ->onBooting(function () use (&$bootingCalled) {
                 $bootingCalled = true;
             })
-            ->addDefinition('foo', fn() => 'bar', true)
-            ->onBooted(function () use (&$bootedCalled) {
-                $bootedCalled = true;
-            });
+            ->addDefinition('foo', fn() => 'bar', true);
 
         $kernel->boot();
 
         $this->assertTrue($bootingCalled);
-        $this->assertTrue($bootedCalled);
         $this->assertSame('bar', $kernel->getContainer()->get('foo'));
+    }
+
+    public function test_on_booting_can_add_definitions(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->onBooting(function (KernelInterface $k): void {
+            $k->addDefinition('dynamic', fn() => 'added_in_booting', true);
+        });
+
+        $kernel->boot();
+
+        $this->assertSame('added_in_booting', $kernel->getContainer()->get('dynamic'));
+    }
+
+    public function test_it_registers_environment_in_container(): void
+    {
+        $kernel = new Kernel(Environment::Production);
+        $kernel->boot();
+
+        $this->assertSame('production', $kernel->getContainer()->get('kernel.environment'));
+    }
+
+    public function test_it_registers_debug_in_container(): void
+    {
+        $kernel = new Kernel(Environment::Testing, debug: true);
+        $kernel->boot();
+
+        $this->assertTrue($kernel->getContainer()->get('kernel.debug'));
+    }
+
+    public function test_it_registers_debug_false_in_container(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->boot();
+
+        $this->assertFalse($kernel->getContainer()->get('kernel.debug'));
+    }
+
+    public function test_get_start_time_returns_negative_infinity_when_not_debug(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->boot();
+
+        $this->assertSame(-INF, $kernel->getStartTime());
+    }
+
+    public function test_get_start_time_returns_float_when_debug(): void
+    {
+        $kernel = new Kernel(Environment::Testing, debug: true);
+        $kernel->boot();
+
+        $this->assertIsFloat($kernel->getStartTime());
+        $this->assertGreaterThan(0, $kernel->getStartTime());
+    }
+
+    public function test_get_start_time_returns_negative_infinity_before_boot_without_debug(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+
+        $this->assertSame(-INF, $kernel->getStartTime());
+    }
+
+    public function test_it_dispatches_kernel_booted_event(): void
+    {
+        /** @var list<object> $events */
+        $events = [];
+
+        $dispatcher = new class($events) implements EventDispatcherInterface {
+            /** @param list<object> &$events */
+            public function __construct(private array &$events) {}
+
+            public function dispatch(object $event): object
+            {
+                $this->events[] = $event;
+
+                return $event;
+            }
+        };
+
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->addDefinition(
+            EventDispatcherInterface::class,
+            fn() => $dispatcher,
+            true,
+        );
+        $kernel->boot();
+
+        $this->assertCount(1, $events);
+        $this->assertInstanceOf(KernelBooted::class, $events[0]);
+        $this->assertSame($kernel, $events[0]->kernel);
+    }
+
+    public function test_boot_does_not_fail_without_event_dispatcher(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->boot();
+
+        $this->assertTrue($kernel->isBooted());
     }
 
     public function test_it_uses_default_service_registrar(): void
