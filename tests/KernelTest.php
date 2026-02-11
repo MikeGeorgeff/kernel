@@ -428,6 +428,107 @@ class KernelTest extends TestCase
         $this->assertSame($container, $kernel->getContainer());
     }
 
+    public function test_get_debug_info_returns_empty_array_when_not_debug(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->boot();
+
+        $this->assertSame([], $kernel->getDebugInfo());
+    }
+
+    public function test_get_debug_info_returns_boot_profile_when_debug(): void
+    {
+        $kernel = new Kernel(Environment::Testing, debug: true);
+        $kernel->boot();
+
+        $info = $kernel->getDebugInfo();
+
+        $this->assertArrayHasKey('bootProfile', $info);
+        $this->assertArrayHasKey('start.time', $info['bootProfile']);
+        $this->assertArrayHasKey('end.time', $info['bootProfile']);
+        $this->assertArrayHasKey('duration', $info['bootProfile']);
+        $this->assertArrayHasKey('phases', $info['bootProfile']);
+        $this->assertArrayHasKey('preBoot', $info['bootProfile']['phases']);
+        $this->assertArrayHasKey('serviceRegistration', $info['bootProfile']['phases']);
+        $this->assertArrayHasKey('containerInit', $info['bootProfile']['phases']);
+    }
+
+    public function test_get_debug_info_returns_empty_array_before_boot(): void
+    {
+        $kernel = new Kernel(Environment::Testing, debug: true);
+
+        $this->assertSame([], $kernel->getDebugInfo());
+    }
+
+    public function test_get_debug_info_returns_service_resolution_profile_in_debug_mode(): void
+    {
+        $kernel = new Kernel(Environment::Testing, debug: true);
+        $kernel->addDefinition('foo', fn() => 'bar', true);
+        $kernel->boot();
+
+        $info = $kernel->getDebugInfo();
+
+        $this->assertArrayHasKey('serviceResolutionProfile', $info);
+        $this->assertArrayHasKey('resolved', $info['serviceResolutionProfile']);
+        $this->assertArrayHasKey('unresolved', $info['serviceResolutionProfile']);
+    }
+
+    public function test_get_debug_info_tracks_resolved_services(): void
+    {
+        $kernel = new Kernel(Environment::Testing, debug: true);
+        $kernel->addDefinition('foo', fn() => 'bar', true);
+        $kernel->boot();
+
+        $kernel->getContainer()->get('foo');
+
+        $info = $kernel->getDebugInfo();
+
+        $this->assertArrayHasKey('foo', $info['serviceResolutionProfile']['resolved']);
+    }
+
+    public function test_kernel_implements_debuggable_interface(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+
+        $this->assertInstanceOf(\Georgeff\Kernel\Debug\DebuggableInterface::class, $kernel);
+    }
+
+    public function test_container_is_debug_container_in_debug_mode(): void
+    {
+        $kernel = new Kernel(Environment::Testing, debug: true);
+        $kernel->boot();
+
+        $this->assertInstanceOf(\Georgeff\Kernel\Debug\DebugContainer::class, $kernel->getContainer());
+    }
+
+    public function test_container_is_not_debug_container_when_not_debug(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->boot();
+
+        $this->assertNotInstanceOf(\Georgeff\Kernel\Debug\DebugContainer::class, $kernel->getContainer());
+    }
+
+    public function test_it_throws_when_adding_definition_with_reserved_environment_id(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+
+        $this->expectException(KernelException::class);
+        $this->expectExceptionMessage('Cannot overwrite a reserved service definition');
+
+        $kernel->addDefinition('kernel.environment', fn() => 'fake');
+    }
+
+    public function test_it_throws_when_adding_definition_with_reserved_debug_id(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+
+        $this->expectException(KernelException::class);
+        $this->expectExceptionMessage('Cannot overwrite a reserved service definition');
+
+        $kernel->addDefinition('kernel.debug', fn() => 'fake');
+    }
+
     private function createMockRegistrar(): ServiceRegistrar&\PHPUnit\Framework\MockObject\MockObject
     {
         return $this->createMock(ServiceRegistrar::class);

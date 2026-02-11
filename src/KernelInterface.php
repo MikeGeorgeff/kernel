@@ -68,4 +68,5 @@ interface KernelInterface
      * @return float
      */
     public function getStartTime(): float;
+
 }

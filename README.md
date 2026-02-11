@@ -122,18 +122,41 @@ $registrar = new MyServiceRegistrar();
 $kernel = new Kernel(Environment::Production, $registrar);
 ```
 
-### Debug Mode and Start Time
+### Debug Mode
 
-When debug mode is enabled, the kernel records its start time:
+When debug mode is enabled, the kernel profiles the boot process, wraps the container in a `DebugContainer` that tracks service resolutions, and collects debug info from any resolved service implementing `DebuggableInterface`:
 
 ```php
 $kernel = new Kernel(Environment::Development, debug: true);
 $kernel->boot();
 
 $kernel->getStartTime(); // float (microtime)
+$kernel->getDebugInfo(); // boot profile + service resolution data
 ```
 
-When debug is disabled, `getStartTime()` returns `-INF`.
+The `getDebugInfo()` array contains:
+
+- `bootProfile` — timing for each boot phase (`preBoot`, `serviceRegistration`, `containerInit`)
+- `serviceResolutionProfile` — which services were resolved and their resolution times
+- `servicesDebugInfo` — debug info collected from resolved services that implement `DebuggableInterface`
+
+When debug is disabled, `getStartTime()` returns `-INF` and `getDebugInfo()` returns `[]`.
+
+#### DebuggableInterface
+
+Services can implement `DebuggableInterface` to expose debug data. When resolved through the debug container, their `getDebugInfo()` output is collected automatically:
+
+```php
+use Georgeff\Kernel\Debug\DebuggableInterface;
+
+final class ConnectionPool implements DebuggableInterface
+{
+    public function getDebugInfo(): array
+    {
+        return ['active' => $this->activeCount, 'idle' => $this->idleCount];
+    }
+}
+```
 
 ### Reserved Services
 

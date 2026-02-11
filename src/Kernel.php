@@ -5,9 +5,11 @@ namespace Georgeff\Kernel;
 use Psr\Container\ContainerInterface;
 use Psr\EventDispatcher\EventDispatcherInterface;
 
-class Kernel implements KernelInterface
+class Kernel implements KernelInterface, Debug\DebuggableInterface
 {
     protected ?float $startTime = null;
+
+    protected ?Debug\Profiler $bootProfile = null;
 
     /**
      * @var array<string, array{factory: callable, shared: bool, aliases: string[]}>
@@ -49,15 +51,31 @@ class Kernel implements KernelInterface
         }
     }
 
-    private function preBoot(): void
+    private function initProfiler(): void
     {
-        if ($this->isDebug()) {
-            $this->startTime = microtime(true);
+        if (!$this->isDebug()) {
+            return;
         }
 
-        foreach ($this->preBootCallbacks as $callback) {
-            $callback($this);
-        }
+        $this->bootProfile = new Debug\Profiler();
+
+        $this->startTime   = $this->bootProfile->start();
+    }
+
+    private function profile(string $phase, callable $fn): void
+    {
+        $this->bootProfile?->startPhase($phase);
+
+        $fn();
+
+        $this->bootProfile?->stopPhase($phase);
+    }
+
+    private function registerDefaultDefinitions(): void
+    {
+        $this->definitions['kernel']             = ['factory' => fn() => $this, 'shared' => true, 'aliases' => [KernelInterface::class]];
+        $this->definitions['kernel.debug']       = ['factory' => fn() => $this->isDebug(), 'shared' => true, 'aliases' => []];
+        $this->definitions['kernel.environment'] = ['factory' => fn() => $this->getEnvironment(), 'shared' => true, 'aliases' => []];
     }
 
     /**
@@ -69,26 +87,40 @@ class Kernel implements KernelInterface
             return;
         }
 
-        $this->preBoot();
+        $this->initProfiler();
 
-        $this->registrar->register('kernel', fn() => $this, true, [KernelInterface::class]);
-        $this->registrar->register('kernel.environment', fn() => $this->getEnvironment(), true);
-        $this->registrar->register('kernel.debug', fn() => $this->isDebug(), true);
+        $this->profile('preBoot', function () {
+            foreach ($this->preBootCallbacks as $callback) {
+                $callback($this);
+            }
+        });
 
-        foreach ($this->definitions as $id => $definition) {
-            $this->registrar->register(
-                $id,
-                $definition['factory'],
-                $definition['shared'],
-                $definition['aliases']
-            );
-        }
+        $this->profile('serviceRegistration', function () {
+            $this->registerDefaultDefinitions();
 
-        $this->container = $this->registrar->getContainer();
+            foreach ($this->definitions as $id => $definition) {
+                $this->registrar->register(
+                    $id,
+                    $definition['factory'],
+                    $definition['shared'],
+                    $definition['aliases']
+                );
+            }
+        });
+
+        $this->profile('containerInit', function () {
+            $this->container = $this->registrar->getContainer();
+
+            if ($this->bootProfile !== null) {
+                $this->container = new Debug\DebugContainer($this->container, $this->definitions);
+            }
+        });
 
         $this->booted = true;
 
         $this->dispatchKernelEvent(new Event\KernelBooted($this));
+
+        $this->bootProfile?->stop();
     }
 
     /**
@@ -138,7 +170,7 @@ class Kernel implements KernelInterface
             throw new KernelException('Kernel has already been booted, cannot add new container definitions');
         }
 
-        $reserved = ['kernel', KernelInterface::class];
+        $reserved = ['kernel', KernelInterface::class, 'kernel.environment', 'kernel.debug'];
 
         if (in_array($id, $reserved, true) || array_intersect($reserved, $aliases)) {
             throw new KernelException('Cannot overwrite a reserved service definition');
@@ -171,5 +203,27 @@ class Kernel implements KernelInterface
     public function getStartTime(): float
     {
         return $this->isDebug() && null !== $this->startTime ? $this->startTime : -INF;
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function getDebugInfo(): array
+    {
+        if (!$this->isDebug()) {
+            return [];
+        }
+
+        $info = [];
+
+        if ($this->bootProfile !== null) {
+            $info['bootProfile'] = $this->bootProfile->getDebugInfo();
+        }
+
+        if ($this->container instanceof Debug\DebuggableInterface) {
+            $info += $this->container->getDebugInfo();
+        }
+
+        return $info;
     }
 }
