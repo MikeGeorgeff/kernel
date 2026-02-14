@@ -82,14 +82,18 @@ final class Profiler implements DebuggableInterface
      */
     public function getDebugInfo(): array
     {
+        $duration = $this->getOverallDuration();
+
         $info = [
-            'start.time' => $this->start ?: -INF,
-            'end.time'   => $this->end ?: -INF,
-            'duration'   => $this->getOverallDuration(),
+            'start.time' => $this->start,
+            'end.time'   => $this->end,
+            'duration'   => !is_infinite($duration) ? $duration : null,
         ];
 
         foreach ($this->phases as $phase => $timer) {
-            $timer['duration'] = $this->getPhaseDuration($phase);
+            $phaseDuration = $this->getPhaseDuration($phase);
+
+            $timer['duration'] = !is_infinite($phaseDuration) ? $phaseDuration : null;
 
             $info['phases'][$phase] = $timer;
         }

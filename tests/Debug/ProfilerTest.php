@@ -148,7 +148,7 @@ class ProfilerTest extends TestCase
 
         $info = $profiler->getDebugInfo();
 
-        $this->assertSame(-INF, $info['duration']);
+        $this->assertNull($info['duration']);
         $this->assertIsFloat($info['phases']['testPhase']['duration']);
     }
 
@@ -169,8 +169,25 @@ class ProfilerTest extends TestCase
 
         $info = $profiler->getDebugInfo();
 
-        $this->assertSame(-INF, $info['start.time']);
-        $this->assertSame(-INF, $info['end.time']);
-        $this->assertSame(-INF, $info['duration']);
+        $this->assertNull($info['start.time']);
+        $this->assertNull($info['end.time']);
+        $this->assertNull($info['duration']);
+    }
+
+    public function test_get_debug_info_is_json_encodable(): void
+    {
+        $profiler = new Profiler();
+
+        $this->assertIsString(json_encode($profiler->getDebugInfo(), JSON_THROW_ON_ERROR));
+
+        $profiler->start();
+        $profiler->startPhase('test');
+
+        $this->assertIsString(json_encode($profiler->getDebugInfo(), JSON_THROW_ON_ERROR));
+
+        $profiler->stopPhase('test');
+        $profiler->stop();
+
+        $this->assertIsString(json_encode($profiler->getDebugInfo(), JSON_THROW_ON_ERROR));
     }
 }
