@@ -188,6 +188,10 @@ class ConsoleKernel extends Kernel implements RunnableKernelInterface
 }
 ```
 
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).
+
 ## License
 
 MIT
