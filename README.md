@@ -319,7 +319,7 @@ The kernel registers the following services in the container during boot:
 - `kernel.debug` — the debug flag (`bool`)
 - `kernel.config` — the merged config array from all `ConfigurableModuleInterface` modules (`[]` if none)
 
-These IDs cannot be overwritten via `addDefinition`.
+These IDs cannot be overwritten via `addDefinition`. The `kernel.*` namespace is reserved for the kernel — any service ID with that prefix should be considered owned by the package and subject to change between minor versions.
 
 ### Extending the Kernel
 
