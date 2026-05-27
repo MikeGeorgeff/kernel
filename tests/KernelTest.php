@@ -7,6 +7,10 @@ use Georgeff\Kernel\Event\KernelBooted;
 use Georgeff\Kernel\Kernel;
 use Georgeff\Kernel\KernelException;
 use Georgeff\Kernel\KernelInterface;
+use Georgeff\Kernel\Module\BootableModuleInterface;
+use Georgeff\Kernel\Module\ConfigurableModuleInterface;
+use Georgeff\Kernel\Module\ModuleInterface;
+use Georgeff\Kernel\Module\ModuleRepositoryInterface;
 use Georgeff\Kernel\ServiceRegistrar;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
@@ -527,6 +531,359 @@ class KernelTest extends TestCase
         $this->expectExceptionMessage('Cannot overwrite a reserved service definition');
 
         $kernel->addDefinition('kernel.debug', fn() => 'fake');
+    }
+
+    // -------------------------------------------------------------------------
+    // addModule()
+    // -------------------------------------------------------------------------
+
+    public function test_add_module_returns_the_kernel(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+        $module = $this->createStub(ModuleInterface::class);
+
+        $result = $kernel->addModule($module);
+
+        $this->assertSame($kernel, $result);
+    }
+
+    public function test_add_module_is_fluent(): void
+    {
+        $registeredA = false;
+        $registeredB = false;
+
+        $moduleA = new class($registeredA) implements ModuleInterface {
+            public function __construct(private bool &$registered) {}
+            public function register(KernelInterface $kernel): void { $this->registered = true; }
+        };
+
+        $moduleB = new class($registeredB) implements ModuleInterface {
+            public function __construct(private bool &$registered) {}
+            public function register(KernelInterface $kernel): void { $this->registered = true; }
+        };
+
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->addModule($moduleA)->addModule($moduleB);
+        $kernel->boot();
+
+        $this->assertTrue($registeredA);
+        $this->assertTrue($registeredB);
+    }
+
+    public function test_add_module_throws_after_boot(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->boot();
+
+        $this->expectException(KernelException::class);
+        $this->expectExceptionMessage('Kernel has already been booted, cannot add new modules');
+
+        $kernel->addModule($this->createStub(ModuleInterface::class));
+    }
+
+    public function test_add_module_throws_when_locked(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+        $stub   = $this->createStub(ModuleInterface::class);
+
+        $module = new class($kernel, $stub) implements ModuleInterface {
+            public function __construct(
+                private KernelInterface $kernel,
+                private ModuleInterface $stub,
+            ) {}
+
+            public function register(KernelInterface $kernel): void
+            {
+                $this->kernel->addModule($this->stub);
+            }
+        };
+
+        $kernel->addModule($module);
+
+        $this->expectException(KernelException::class);
+        $this->expectExceptionMessage('Cannot add modules, modules are locked');
+
+        $kernel->boot();
+    }
+
+    public function test_add_module_throws_on_duplicate(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+        $module = $this->createStub(ModuleInterface::class);
+
+        $kernel->addModule($module);
+
+        $this->expectException(KernelException::class);
+        $this->expectExceptionMessage(sprintf('Module "%s" has already been added', $module::class));
+
+        $kernel->addModule(clone $module);
+    }
+
+    // -------------------------------------------------------------------------
+    // addRepository()
+    // -------------------------------------------------------------------------
+
+    public function test_add_repository_returns_the_kernel(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+        $repo   = $this->createStub(ModuleRepositoryInterface::class);
+
+        $result = $kernel->addRepository($repo);
+
+        $this->assertSame($kernel, $result);
+    }
+
+    public function test_add_repository_throws_after_boot(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->boot();
+
+        $this->expectException(KernelException::class);
+        $this->expectExceptionMessage('Kernel has already been booted, cannot add new module repositories');
+
+        $kernel->addRepository($this->createStub(ModuleRepositoryInterface::class));
+    }
+
+    public function test_add_repository_throws_when_locked(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+        $stub   = $this->createStub(ModuleRepositoryInterface::class);
+
+        $module = new class($kernel, $stub) implements ModuleInterface {
+            public function __construct(
+                private KernelInterface $kernel,
+                private ModuleRepositoryInterface $stub,
+            ) {}
+
+            public function register(KernelInterface $kernel): void
+            {
+                $this->kernel->addRepository($this->stub);
+            }
+        };
+
+        $kernel->addModule($module);
+
+        $this->expectException(KernelException::class);
+        $this->expectExceptionMessage('Cannot add module repository, modules are locked');
+
+        $kernel->boot();
+    }
+
+    public function test_add_repository_throws_on_duplicate(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+        $repo   = $this->createStub(ModuleRepositoryInterface::class);
+
+        $kernel->addRepository($repo);
+
+        $this->expectException(KernelException::class);
+        $this->expectExceptionMessage(sprintf('Module repository "%s" has already been added', $repo::class));
+
+        $kernel->addRepository(clone $repo);
+    }
+
+    // -------------------------------------------------------------------------
+    // Module integration
+    // -------------------------------------------------------------------------
+
+    public function test_module_register_is_called_during_boot(): void
+    {
+        $registered = false;
+
+        $module = new class($registered) implements ModuleInterface {
+            public function __construct(private bool &$registered) {}
+            public function register(KernelInterface $kernel): void { $this->registered = true; }
+        };
+
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->addModule($module);
+        $kernel->boot();
+
+        $this->assertTrue($registered);
+    }
+
+    public function test_module_register_can_contribute_definitions(): void
+    {
+        $service = new \stdClass();
+
+        $module = new class($service) implements ModuleInterface {
+            public function __construct(private \stdClass $service) {}
+            public function register(KernelInterface $kernel): void
+            {
+                $kernel->addDefinition('module.service', fn() => $this->service, true);
+            }
+        };
+
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->addModule($module);
+        $kernel->boot();
+
+        $this->assertSame($service, $kernel->getContainer()->get('module.service'));
+    }
+
+    public function test_bootable_module_boot_is_called_after_container_is_built(): void
+    {
+        $receivedContainer = null;
+
+        $module = new class($receivedContainer) implements BootableModuleInterface {
+            public function __construct(private mixed &$receivedContainer) {}
+            public function register(KernelInterface $kernel): void {}
+            public function boot(ContainerInterface $container): void
+            {
+                $this->receivedContainer = $container;
+            }
+        };
+
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->addModule($module);
+        $kernel->boot();
+
+        $this->assertInstanceOf(ContainerInterface::class, $receivedContainer);
+        $this->assertSame($kernel->getContainer(), $receivedContainer);
+    }
+
+    public function test_repository_modules_are_registered_during_boot(): void
+    {
+        $registered = false;
+
+        $module = new class($registered) implements ModuleInterface {
+            public function __construct(private bool &$registered) {}
+            public function register(KernelInterface $kernel): void { $this->registered = true; }
+        };
+
+        $repo = new class($module) implements ModuleRepositoryInterface {
+            public function __construct(private ModuleInterface $module) {}
+            public function modules(Environment $env): array { return [$this->module]; }
+        };
+
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->addRepository($repo);
+        $kernel->boot();
+
+        $this->assertTrue($registered);
+    }
+
+    public function test_repository_receives_kernel_environment(): void
+    {
+        $receivedEnv = null;
+
+        $repo = new class($receivedEnv) implements ModuleRepositoryInterface {
+            public function __construct(private mixed &$receivedEnv) {}
+            public function modules(Environment $env): array
+            {
+                $this->receivedEnv = $env;
+                return [];
+            }
+        };
+
+        $kernel = new Kernel(Environment::Production);
+        $kernel->addRepository($repo);
+        $kernel->boot();
+
+        $this->assertSame(Environment::Production, $receivedEnv);
+    }
+
+    // -------------------------------------------------------------------------
+    // kernel.config
+    // -------------------------------------------------------------------------
+
+    public function test_kernel_config_is_available_in_container_after_boot(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->boot();
+
+        $this->assertTrue($kernel->getContainer()->has('kernel.config'));
+    }
+
+    public function test_kernel_config_is_empty_without_configurable_modules(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->addModule($this->createStub(ModuleInterface::class));
+        $kernel->boot();
+
+        $this->assertSame([], $kernel->getContainer()->get('kernel.config'));
+    }
+
+    public function test_kernel_config_contains_merged_module_config(): void
+    {
+        $module = new class implements ConfigurableModuleInterface {
+            public function register(KernelInterface $kernel): void {}
+            public function config(Environment $env): array
+            {
+                return ['db.host' => 'localhost', 'cache.driver' => 'redis'];
+            }
+        };
+
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->addModule($module);
+        $kernel->boot();
+
+        $this->assertSame(
+            ['db.host' => 'localhost', 'cache.driver' => 'redis'],
+            $kernel->getContainer()->get('kernel.config'),
+        );
+    }
+
+    public function test_kernel_config_receives_kernel_environment(): void
+    {
+        $receivedEnv = null;
+
+        $module = new class($receivedEnv) implements ConfigurableModuleInterface {
+            public function __construct(private mixed &$receivedEnv) {}
+            public function register(KernelInterface $kernel): void {}
+            public function config(Environment $env): array
+            {
+                $this->receivedEnv = $env;
+                return [];
+            }
+        };
+
+        $kernel = new Kernel(Environment::Production);
+        $kernel->addModule($module);
+        $kernel->boot();
+
+        $this->assertSame(Environment::Production, $receivedEnv);
+    }
+
+    public function test_kernel_config_is_reserved(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+
+        $this->expectException(KernelException::class);
+        $this->expectExceptionMessage('Cannot overwrite a reserved service definition');
+
+        $kernel->addDefinition('kernel.config', fn() => []);
+    }
+
+    // -------------------------------------------------------------------------
+    // Debug info — module phases
+    // -------------------------------------------------------------------------
+
+    public function test_get_debug_info_includes_module_phases(): void
+    {
+        $kernel = new Kernel(Environment::Testing, debug: true);
+        $kernel->boot();
+
+        $phases = $kernel->getDebugInfo()['bootProfile']['phases'];
+
+        $this->assertArrayHasKey('moduleLoad', $phases);
+        $this->assertArrayHasKey('moduleRegistration', $phases);
+        $this->assertArrayHasKey('moduleBoot', $phases);
+    }
+
+    public function test_get_debug_info_includes_module_loader_info(): void
+    {
+        $kernel = new Kernel(Environment::Testing, debug: true);
+        $kernel->addModule($this->createStub(ModuleInterface::class));
+        $kernel->boot();
+
+        $info = $kernel->getDebugInfo();
+
+        $this->assertArrayHasKey('modules', $info);
+        $this->assertArrayHasKey('loaded', $info['modules']);
+        $this->assertArrayHasKey('registered', $info['modules']);
+        $this->assertArrayHasKey('booted', $info['modules']);
+        $this->assertArrayHasKey('modules', $info['modules']);
     }
 
     private function createMockRegistrar(): ServiceRegistrar&\PHPUnit\Framework\MockObject\MockObject

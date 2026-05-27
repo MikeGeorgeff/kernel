@@ -3,7 +3,9 @@
 namespace Georgeff\Kernel;
 
 use Psr\Container\ContainerInterface;
+use Georgeff\Kernel\Module\ModuleInterface;
 use Psr\EventDispatcher\EventDispatcherInterface;
+use Georgeff\Kernel\Module\ModuleRepositoryInterface;
 
 class Kernel implements KernelInterface, Debug\DebuggableInterface
 {
@@ -16,6 +18,13 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
      */
     private array $definitions = [];
 
+    /**
+     * @var string[]
+     */
+    private array $reservedServices = [];
+
+    private Module\ModuleLoader $modules;
+
     private ServiceRegistrar $registrar;
 
     protected ?ContainerInterface $container = null;
@@ -25,6 +34,8 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
     protected bool $debug;
 
     protected bool $booted = false;
+
+    private bool $lockModules = false;
 
     /**
      * @var array<callable(KernelInterface): void>
@@ -39,6 +50,10 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
         $this->environment = $environment;
         $this->registrar   = $registrar ?: new DefaultServiceRegistrar();
         $this->debug       = $debug;
+
+        $this->registerDefaultDefinitions();
+
+        $this->modules = new Module\ModuleLoader();
     }
 
     protected function dispatchKernelEvent(Event\KernelEvent $event): void
@@ -73,9 +88,11 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
 
     private function registerDefaultDefinitions(): void
     {
-        $this->definitions['kernel']             = ['factory' => fn() => $this, 'shared' => true, 'aliases' => [KernelInterface::class]];
-        $this->definitions['kernel.debug']       = ['factory' => fn() => $this->isDebug(), 'shared' => true, 'aliases' => []];
-        $this->definitions['kernel.environment'] = ['factory' => fn() => $this->getEnvironment(), 'shared' => true, 'aliases' => []];
+        $this->addReserved(KernelInterface::class, $this, true, ['kernel'])
+             ->addReserved('kernel.debug', $this->isDebug(), true)
+             ->addReserved('kernel.environment', $this->getEnvironment(), true);
+
+        $this->reservedServices[] = 'kernel.config';
     }
 
     /**
@@ -95,9 +112,17 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
             }
         });
 
-        $this->profile('serviceRegistration', function () {
-            $this->registerDefaultDefinitions();
+        $this->lockModules = true;
 
+        $this->profile('moduleLoad', function () {
+            $this->addReserved('kernel.config', $this->modules->load($this->environment), true);
+        });
+
+        $this->profile('moduleRegistration', function () {
+            $this->modules->register($this);
+        });
+
+        $this->profile('serviceRegistration', function () {
             foreach ($this->definitions as $id => $definition) {
                 $this->registrar->register(
                     $id,
@@ -114,6 +139,12 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
             if ($this->bootProfile !== null) {
                 $this->container = new Debug\DebugContainer($this->container, $this->definitions);
             }
+        });
+
+        $this->profile('moduleBoot', function () {
+            assert(null !== $this->container);
+
+            $this->modules->boot($this->container);
         });
 
         $this->booted = true;
@@ -162,6 +193,28 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
     }
 
     /**
+     * Add a reserved definition
+     *
+     * @param string[] $aliases
+     */
+    private function addReserved(string $id, mixed $instance, bool $shared = false, array $aliases = []): static
+    {
+        $this->definitions[$id] = [
+            'factory' => fn() => $instance,
+            'shared'  => $shared,
+            'aliases' => $aliases,
+        ];
+
+        foreach ([$id, ...$aliases] as $serviceId) {
+            if (!in_array($serviceId, $this->reservedServices, true)) {
+                $this->reservedServices[] = $serviceId;
+            }
+        }
+
+        return $this;
+    }
+
+    /**
      * @inheritdoc
      */
     public function addDefinition(string $id, callable $factory, bool $shared = false, array $aliases = []): static
@@ -170,7 +223,7 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
             throw new KernelException('Kernel has already been booted, cannot add new container definitions');
         }
 
-        $reserved = ['kernel', KernelInterface::class, 'kernel.environment', 'kernel.debug'];
+        $reserved = $this->reservedServices;
 
         if (in_array($id, $reserved, true) || array_intersect($reserved, $aliases)) {
             throw new KernelException('Cannot overwrite a reserved service definition');
@@ -181,6 +234,42 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
             'shared'  => $shared,
             'aliases' => $aliases,
         ];
+
+        return $this;
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function addModule(ModuleInterface $module): static
+    {
+        if ($this->isBooted()) {
+            throw new KernelException('Kernel has already been booted, cannot add new modules');
+        }
+
+        if ($this->lockModules) {
+            throw new KernelException('Cannot add modules, modules are locked');
+        }
+
+        $this->modules->add($module);
+
+        return $this;
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function addRepository(ModuleRepositoryInterface $repository): static
+    {
+        if ($this->isBooted()) {
+            throw new KernelException('Kernel has already been booted, cannot add new module repositories');
+        }
+
+        if ($this->lockModules) {
+            throw new KernelException('Cannot add module repository, modules are locked');
+        }
+
+        $this->modules->addRepository($repository);
 
         return $this;
     }
@@ -218,6 +307,7 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
 
         if ($this->bootProfile !== null) {
             $info['bootProfile'] = $this->bootProfile->getDebugInfo();
+            $info['modules']     = $this->modules->getDebugInfo();
         }
 
         if ($this->container instanceof Debug\DebuggableInterface) {

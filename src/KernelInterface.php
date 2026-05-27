@@ -3,6 +3,8 @@
 namespace Georgeff\Kernel;
 
 use Psr\Container\ContainerInterface;
+use Georgeff\Kernel\Module\ModuleInterface;
+use Georgeff\Kernel\Module\ModuleRepositoryInterface;
 
 interface KernelInterface
 {
@@ -54,6 +56,24 @@ interface KernelInterface
      * @return static
      */
     public function addDefinition(string $id, callable $factory, bool $shared = false, array $aliases = []): static;
+
+    /**
+     * Add a module to the kernel
+     *
+     * @param \Georgeff\Kernel\Module\ModuleInterface $module
+     *
+     * @return static
+     */
+    public function addModule(ModuleInterface $module): static;
+
+    /**
+     * Add a module repository to the kernel
+     *
+     * @param \Georgeff\Kernel\Module\ModuleRepositoryInterface $repository
+     *
+     * @return static
+     */
+    public function addRepository(ModuleRepositoryInterface $repository): static;
 
     /**
      * Get the container

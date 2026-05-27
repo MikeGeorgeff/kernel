@@ -1,6 +1,6 @@
 # Kernel
 
-A lightweight application kernel with service container bootstrapping, lifecycle callbacks, and PSR-14 event dispatching.
+A lightweight application kernel with service container bootstrapping, module system, lifecycle callbacks, and PSR-14 event dispatching.
 
 ## Installation
 
@@ -58,6 +58,157 @@ $kernel->addDefinition(
 ```
 
 Definitions registered later with the same ID will overwrite earlier ones, allowing base definitions to be overridden.
+
+### Modules
+
+Modules are self-contained units that contribute service definitions, configuration, and boot logic to the kernel. They replace ad-hoc `addDefinition()` calls with composable, reusable pieces.
+
+#### Defining a Module
+
+Every module implements `ModuleInterface` with a single `register()` method:
+
+```php
+use Georgeff\Kernel\KernelInterface;
+use Georgeff\Kernel\Module\ModuleInterface;
+
+final class DatabaseModule implements ModuleInterface
+{
+    public function register(KernelInterface $kernel): void
+    {
+        $kernel->addDefinition(
+            'db.connection',
+            fn() => new PdoConnection(getenv('DB_DSN')),
+            shared: true,
+            aliases: [ConnectionInterface::class],
+        );
+    }
+}
+```
+
+#### Configuration
+
+Modules that need to declare configuration implement `ConfigurableModuleInterface`. The returned array is merged into the `kernel.config` container service during boot:
+
+```php
+use Georgeff\Kernel\Environment;
+use Georgeff\Kernel\KernelInterface;
+use Georgeff\Kernel\Module\ConfigurableModuleInterface;
+
+final class DatabaseModule implements ConfigurableModuleInterface
+{
+    public function register(KernelInterface $kernel): void
+    {
+        $kernel->addDefinition(
+            'db.connection',
+            fn(ContainerInterface $c) => new PdoConnection($c->get('db.dsn')),
+            shared: true,
+        );
+    }
+
+    public function config(Environment $env): array
+    {
+        return [
+            'db.dsn'  => getenv('DB_DSN') ?: 'sqlite::memory:',
+            'db.host' => getenv('DB_HOST') ?: 'localhost',
+        ];
+    }
+}
+```
+
+The `$env` parameter is available for structural differences — for example, swapping a real driver for an in-memory one in testing:
+
+```php
+public function config(Environment $env): array
+{
+    return [
+        'db.dsn' => $env === Environment::Testing
+            ? 'sqlite::memory:'
+            : getenv('DB_DSN'),
+    ];
+}
+```
+
+Config from multiple modules is merged in registration order. Later definitions overwrite earlier ones for the same key.
+
+#### Module Boot
+
+Modules that need access to the built container implement `BootableModuleInterface`. `boot()` is called after the container is fully initialized:
+
+```php
+use Georgeff\Kernel\KernelInterface;
+use Georgeff\Kernel\Module\BootableModuleInterface;
+use Psr\Container\ContainerInterface;
+
+final class MigrationModule implements BootableModuleInterface
+{
+    public function register(KernelInterface $kernel): void { /* ... */ }
+
+    public function boot(ContainerInterface $container): void
+    {
+        $container->get(Migrator::class)->run();
+    }
+}
+```
+
+Because the container is already built when `boot()` is called, new service definitions cannot be added here — use `register()` for that.
+
+#### Registering Modules
+
+Register modules on the kernel before booting:
+
+```php
+$kernel = new Kernel(Environment::Production);
+
+$kernel
+    ->addModule(new DatabaseModule())
+    ->addModule(new CacheModule())
+    ->addModule(new MigrationModule());
+
+$kernel->boot();
+```
+
+Each module class may only be registered once. Registering the same class twice throws a `KernelException`.
+
+#### Module Repositories
+
+Repositories group related modules and can conditionally include them based on the environment. Packages ship a repository rather than exposing individual modules:
+
+```php
+use Georgeff\Kernel\Environment;
+use Georgeff\Kernel\Module\ModuleInterface;
+use Georgeff\Kernel\Module\ModuleRepositoryInterface;
+
+final class DatabaseRepository implements ModuleRepositoryInterface
+{
+    public function modules(Environment $env): array
+    {
+        $modules = [
+            new DatabaseModule(),
+            new MigrationModule(),
+        ];
+
+        if ($env !== Environment::Production) {
+            $modules[] = new DatabaseDebugModule();
+        }
+
+        return $modules;
+    }
+}
+```
+
+```php
+$kernel->addRepository(new DatabaseRepository());
+```
+
+#### Boot Phase Order
+
+When `boot()` is called, modules are processed in this order:
+
+1. `onBooting` callbacks
+2. **Module load** — repositories are flattened into the module list; `config()` is called on all `ConfigurableModuleInterface` modules and the result is bound as `kernel.config`
+3. **Module registration** — `register()` is called on all modules
+4. Container initialization
+5. **Module boot** — `boot()` is called on all `BootableModuleInterface` modules
 
 ### Lifecycle Callbacks
 
@@ -136,7 +287,8 @@ $kernel->getDebugInfo(); // boot profile + service resolution data
 
 The `getDebugInfo()` array contains:
 
-- `bootProfile` — timing for each boot phase (`preBoot`, `serviceRegistration`, `containerInit`)
+- `bootProfile` — timing for each boot phase (`preBoot`, `moduleLoad`, `moduleRegistration`, `serviceRegistration`, `containerInit`, `moduleBoot`)
+- `modules` — module loader state: which module classes were loaded and whether each phase has run
 - `serviceResolutionProfile` — which services were resolved and their resolution times
 - `servicesDebugInfo` — debug info collected from resolved services that implement `DebuggableInterface`
 
@@ -165,8 +317,9 @@ The kernel registers the following services in the container during boot:
 - `kernel` (aliased to `KernelInterface`)
 - `kernel.environment` — the environment string value (e.g. `'production'`)
 - `kernel.debug` — the debug flag (`bool`)
+- `kernel.config` — the merged config array from all `ConfigurableModuleInterface` modules (`[]` if none)
 
-These IDs cannot be overwritten via `addDefinition`.
+These IDs cannot be overwritten via `addDefinition`. The `kernel.*` namespace is reserved for the kernel — any service ID with that prefix should be considered owned by the package and subject to change between minor versions.
 
 ### Extending the Kernel
 
