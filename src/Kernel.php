@@ -2,10 +2,10 @@
 
 namespace Georgeff\Kernel;
 
-use Georgeff\Kernel\Module\ModuleInterface;
-use Georgeff\Kernel\Module\ModuleRepositoryInterface;
 use Psr\Container\ContainerInterface;
+use Georgeff\Kernel\Module\ModuleInterface;
 use Psr\EventDispatcher\EventDispatcherInterface;
+use Georgeff\Kernel\Module\ModuleRepositoryInterface;
 
 class Kernel implements KernelInterface, Debug\DebuggableInterface
 {
