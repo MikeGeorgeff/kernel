@@ -33,7 +33,12 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
 
     protected bool $debug;
 
+    /**
+     * @internal
+     */
     protected bool $booted = false;
+
+    private bool $shutdown = false;
 
     private bool $lockModules = false;
 
@@ -41,6 +46,21 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
      * @var array<callable(KernelInterface): void>
      */
     private array $preBootCallbacks = [];
+
+    /**
+     * @var array<callable(KernelInterface): void>
+     */
+    private array $postBootCallbacks = [];
+
+    /**
+     * @var array<callable(KernelInterface): void>
+     */
+    private array $preShutdownCallbacks = [];
+
+    /**
+     * @var array<callable(KernelInterface): void>
+     */
+    private array $postShutdownCallbacks = [];
 
     public function __construct(
         Environment $environment,
@@ -149,9 +169,39 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
 
         $this->booted = true;
 
-        $this->dispatchKernelEvent(new Event\KernelBooted($this));
+        $this->profile('postBoot', function () {
+            $this->dispatchKernelEvent(new Event\KernelBooted($this));
+
+            foreach ($this->postBootCallbacks as $callback) {
+                $callback($this);
+            }
+        });
 
         $this->bootProfile?->stop();
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function shutdown(): void
+    {
+        if ($this->isShutdown()) {
+            return;
+        }
+
+        if (!$this->isBooted()) {
+            return;
+        }
+
+        foreach ($this->preShutdownCallbacks as $callback) {
+            $callback($this);
+        }
+
+        $this->shutdown = true;
+
+        foreach ($this->postShutdownCallbacks as $callback) {
+            $callback($this);
+        }
     }
 
     /**
@@ -160,6 +210,14 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
     public function isBooted(): bool
     {
         return $this->booted;
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function isShutdown(): bool
+    {
+        return $this->shutdown;
     }
 
     /**
@@ -188,6 +246,48 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
         }
 
         $this->preBootCallbacks[] = $callback;
+
+        return $this;
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function onBooted(callable $callback): static
+    {
+        if ($this->isBooted()) {
+            throw new KernelException('Kernel has already been booted, cannot add new post-boot callbacks');
+        }
+
+        $this->postBootCallbacks[] = $callback;
+
+        return $this;
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function onShutdown(callable $callback): static
+    {
+        if ($this->isShutdown()) {
+            throw new KernelException('Kernel has already been shutdown, cannot add new pre-shutdown callbacks');
+        }
+
+        $this->preShutdownCallbacks[] = $callback;
+
+        return $this;
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function afterShutdown(callable $callback): static
+    {
+        if ($this->isShutdown()) {
+            throw new KernelException('Kernel has already been shutdown, cannot add new post-shutdown callbacks');
+        }
+
+        $this->postShutdownCallbacks[] = $callback;
 
         return $this;
     }
@@ -279,7 +379,7 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
      */
     public function getContainer(): ContainerInterface
     {
-        if (!$this->booted || !$this->container) {
+        if (!$this->isBooted() || !$this->container) {
             throw new KernelException('Container is inaccessible, kernel has not been booted');
         }
 

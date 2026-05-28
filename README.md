@@ -209,22 +209,15 @@ When `boot()` is called, modules are processed in this order:
 3. **Module registration** — `register()` is called on all modules
 4. Container initialization
 5. **Module boot** — `boot()` is called on all `BootableModuleInterface` modules
+6. `KernelBooted` event dispatched + `onBooted` callbacks
 
 ### Lifecycle Callbacks
 
-Register `onBooting` callbacks to hook into the kernel boot lifecycle. Callbacks run before service definitions are registered with the container:
+The kernel provides four hooks for tapping into the boot and shutdown lifecycle. All callbacks receive the full `KernelInterface` instance and all hook methods return the kernel for fluent chaining.
 
-```php
-$kernel = new Kernel(Environment::Production);
+#### Boot callbacks
 
-$kernel->onBooting(function (KernelInterface $kernel) {
-    // Called during boot, before services are registered
-});
-
-$kernel->boot();
-```
-
-`onBooting` callbacks must be registered before boot. They can also add definitions dynamically:
+`onBooting` runs before service definitions are registered with the container. Use it to add definitions dynamically or configure the kernel before boot:
 
 ```php
 $kernel->onBooting(function (KernelInterface $kernel) {
@@ -232,13 +225,49 @@ $kernel->onBooting(function (KernelInterface $kernel) {
 });
 ```
 
-`onBooting` returns the kernel for fluent chaining with `addDefinition`:
+`onBooted` runs after boot completes and the `KernelBooted` event has been dispatched. The container is available at this point:
 
 ```php
-$kernel
-    ->onBooting(function (KernelInterface $kernel) { /* ... */ })
-    ->addDefinition('logger', fn() => new FileLogger(), shared: true);
+$kernel->onBooted(function (KernelInterface $kernel) {
+    $kernel->getContainer()->get('logger')->info('Kernel booted');
+});
 ```
+
+Both must be registered before `boot()` is called.
+
+#### Shutdown callbacks
+
+`onShutdown` runs before the kernel is marked as shut down. `afterShutdown` runs after. Both can be registered any time before `shutdown()` is called — including after boot:
+
+```php
+$kernel->onShutdown(function (KernelInterface $kernel) {
+    // isShutdown() is still false here
+});
+
+$kernel->afterShutdown(function (KernelInterface $kernel) {
+    // isShutdown() is true here
+});
+```
+
+### Shutdown
+
+Call `shutdown()` to run the shutdown lifecycle. It is idempotent and a no-op if the kernel has not been booted:
+
+```php
+$kernel->boot();
+
+// handle a request, run a command, etc.
+
+$kernel->shutdown();
+
+$kernel->isShutdown(); // true
+```
+
+Shutdown runs in this order:
+
+1. `onShutdown` callbacks
+2. Kernel marked as shut down (`isShutdown()` becomes `true`)
+3. `afterShutdown` callbacks
 
 ### Events
 

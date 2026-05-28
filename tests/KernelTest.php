@@ -296,6 +296,81 @@ class KernelTest extends TestCase
         $kernel->onBooting(function () {});
     }
 
+    public function test_on_booted_callback_is_called_after_boot(): void
+    {
+        $called = false;
+
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->onBooted(function (KernelInterface $k) use (&$called) {
+            $called = true;
+        });
+
+        $kernel->boot();
+
+        $this->assertTrue($called);
+    }
+
+    public function test_on_booted_callback_receives_kernel(): void
+    {
+        $received = null;
+
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->onBooted(function (KernelInterface $k) use (&$received) {
+            $received = $k;
+        });
+
+        $kernel->boot();
+
+        $this->assertSame($kernel, $received);
+    }
+
+    public function test_on_booted_callback_fires_when_kernel_is_already_booted(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->onBooted(function (KernelInterface $k) {
+            $this->assertTrue($k->isBooted());
+        });
+
+        $kernel->boot();
+    }
+
+    public function test_multiple_on_booted_callbacks_are_called_in_order(): void
+    {
+        $order = [];
+
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->onBooted(function () use (&$order) {
+            $order[] = 'first';
+        });
+        $kernel->onBooted(function () use (&$order) {
+            $order[] = 'second';
+        });
+
+        $kernel->boot();
+
+        $this->assertSame(['first', 'second'], $order);
+    }
+
+    public function test_on_booted_returns_the_kernel(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+
+        $result = $kernel->onBooted(function () {});
+
+        $this->assertSame($kernel, $result);
+    }
+
+    public function test_it_throws_when_registering_on_booted_after_boot(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->boot();
+
+        $this->expectException(KernelException::class);
+        $this->expectExceptionMessage('Kernel has already been booted, cannot add new post-boot callbacks');
+
+        $kernel->onBooted(function () {});
+    }
+
     public function test_on_booting_and_add_definition_are_fluent(): void
     {
         $bootingCalled = false;
@@ -884,6 +959,262 @@ class KernelTest extends TestCase
         $this->assertArrayHasKey('registered', $info['modules']);
         $this->assertArrayHasKey('booted', $info['modules']);
         $this->assertArrayHasKey('modules', $info['modules']);
+    }
+
+    // -------------------------------------------------------------------------
+    // shutdown / isShutdown
+    // -------------------------------------------------------------------------
+
+    public function test_it_is_not_shutdown_before_shutdown(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->boot();
+
+        $this->assertFalse($kernel->isShutdown());
+    }
+
+    public function test_it_is_not_shutdown_before_boot(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+
+        $this->assertFalse($kernel->isShutdown());
+    }
+
+    public function test_it_shuts_down(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->boot();
+        $kernel->shutdown();
+
+        $this->assertTrue($kernel->isShutdown());
+    }
+
+    public function test_shutdown_is_idempotent(): void
+    {
+        $calls = 0;
+
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->onShutdown(function () use (&$calls) {
+            $calls++;
+        });
+        $kernel->boot();
+        $kernel->shutdown();
+        $kernel->shutdown();
+
+        $this->assertSame(1, $calls);
+    }
+
+    public function test_shutdown_is_a_no_op_when_not_booted(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->shutdown();
+
+        $this->assertFalse($kernel->isShutdown());
+    }
+
+    // -------------------------------------------------------------------------
+    // onShutdown
+    // -------------------------------------------------------------------------
+
+    public function test_on_shutdown_callback_is_called_during_shutdown(): void
+    {
+        $called = false;
+
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->onShutdown(function (KernelInterface $k) use (&$called) {
+            $called = true;
+        });
+        $kernel->boot();
+        $kernel->shutdown();
+
+        $this->assertTrue($called);
+    }
+
+    public function test_on_shutdown_callback_receives_kernel(): void
+    {
+        $received = null;
+
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->onShutdown(function (KernelInterface $k) use (&$received) {
+            $received = $k;
+        });
+        $kernel->boot();
+        $kernel->shutdown();
+
+        $this->assertSame($kernel, $received);
+    }
+
+    public function test_on_shutdown_callback_fires_before_shutdown_flag_is_set(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->onShutdown(function (KernelInterface $k) {
+            $this->assertFalse($k->isShutdown());
+        });
+        $kernel->boot();
+        $kernel->shutdown();
+    }
+
+    public function test_multiple_on_shutdown_callbacks_are_called_in_order(): void
+    {
+        $order = [];
+
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->onShutdown(function () use (&$order) {
+            $order[] = 'first';
+        });
+        $kernel->onShutdown(function () use (&$order) {
+            $order[] = 'second';
+        });
+        $kernel->boot();
+        $kernel->shutdown();
+
+        $this->assertSame(['first', 'second'], $order);
+    }
+
+    public function test_on_shutdown_returns_the_kernel(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+
+        $result = $kernel->onShutdown(function () {});
+
+        $this->assertSame($kernel, $result);
+    }
+
+    public function test_on_shutdown_can_be_registered_after_boot(): void
+    {
+        $called = false;
+
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->boot();
+        $kernel->onShutdown(function () use (&$called) {
+            $called = true;
+        });
+        $kernel->shutdown();
+
+        $this->assertTrue($called);
+    }
+
+    public function test_it_throws_when_registering_on_shutdown_after_shutdown(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->boot();
+        $kernel->shutdown();
+
+        $this->expectException(KernelException::class);
+        $this->expectExceptionMessage('Kernel has already been shutdown, cannot add new pre-shutdown callbacks');
+
+        $kernel->onShutdown(function () {});
+    }
+
+    // -------------------------------------------------------------------------
+    // afterShutdown
+    // -------------------------------------------------------------------------
+
+    public function test_after_shutdown_callback_is_called_after_shutdown(): void
+    {
+        $called = false;
+
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->afterShutdown(function (KernelInterface $k) use (&$called) {
+            $called = true;
+        });
+        $kernel->boot();
+        $kernel->shutdown();
+
+        $this->assertTrue($called);
+    }
+
+    public function test_after_shutdown_callback_receives_kernel(): void
+    {
+        $received = null;
+
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->afterShutdown(function (KernelInterface $k) use (&$received) {
+            $received = $k;
+        });
+        $kernel->boot();
+        $kernel->shutdown();
+
+        $this->assertSame($kernel, $received);
+    }
+
+    public function test_after_shutdown_callback_fires_after_shutdown_flag_is_set(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->afterShutdown(function (KernelInterface $k) {
+            $this->assertTrue($k->isShutdown());
+        });
+        $kernel->boot();
+        $kernel->shutdown();
+    }
+
+    public function test_multiple_after_shutdown_callbacks_are_called_in_order(): void
+    {
+        $order = [];
+
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->afterShutdown(function () use (&$order) {
+            $order[] = 'first';
+        });
+        $kernel->afterShutdown(function () use (&$order) {
+            $order[] = 'second';
+        });
+        $kernel->boot();
+        $kernel->shutdown();
+
+        $this->assertSame(['first', 'second'], $order);
+    }
+
+    public function test_after_shutdown_returns_the_kernel(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+
+        $result = $kernel->afterShutdown(function () {});
+
+        $this->assertSame($kernel, $result);
+    }
+
+    public function test_after_shutdown_can_be_registered_after_boot(): void
+    {
+        $called = false;
+
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->boot();
+        $kernel->afterShutdown(function () use (&$called) {
+            $called = true;
+        });
+        $kernel->shutdown();
+
+        $this->assertTrue($called);
+    }
+
+    public function test_it_throws_when_registering_after_shutdown_after_shutdown(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->boot();
+        $kernel->shutdown();
+
+        $this->expectException(KernelException::class);
+        $this->expectExceptionMessage('Kernel has already been shutdown, cannot add new post-shutdown callbacks');
+
+        $kernel->afterShutdown(function () {});
+    }
+
+    public function test_on_shutdown_fires_before_after_shutdown(): void
+    {
+        $order = [];
+
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->onShutdown(function () use (&$order) {
+            $order[] = 'onShutdown';
+        });
+        $kernel->afterShutdown(function () use (&$order) {
+            $order[] = 'afterShutdown';
+        });
+        $kernel->boot();
+        $kernel->shutdown();
+
+        $this->assertSame(['onShutdown', 'afterShutdown'], $order);
     }
 
     private function createMockRegistrar(): ServiceRegistrar&\PHPUnit\Framework\MockObject\MockObject
