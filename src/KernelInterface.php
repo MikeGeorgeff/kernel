@@ -16,11 +16,25 @@ interface KernelInterface
     public function boot(): void;
 
     /**
+     * Shutdown the kernel
+     *
+     * @return void
+     */
+    public function shutdown(): void;
+
+    /**
      * Indicates if the kernel has been booted
      *
      * @return bool
      */
     public function isBooted(): bool;
+
+    /**
+     * Indicates if the kernel has been shutdown
+     *
+     * @return bool
+     */
+    public function isShutdown(): bool;
 
     /**
      * Get the kernel environment
@@ -44,6 +58,33 @@ interface KernelInterface
      * @return static
      */
     public function onBooting(callable $callback): static;
+
+    /**
+     * Register a post-boot callback
+     *
+     * @param callable(KernelInterface): void $callback
+     *
+     * @return static
+     */
+    public function onBooted(callable $callback): static;
+
+    /**
+     * Register a pre-shutdown callback
+     *
+     * @param callable(KernelInterface): void $callback
+     *
+     * @return static
+     */
+    public function onShutdown(callable $callback): static;
+
+    /**
+     * Register a post shutdown callback
+     *
+     * @param callable(KernelInterface): void $callback
+     *
+     * @return static
+     */
+    public function afterShutdown(callable $callback): static;
 
     /**
      * Add a container definition

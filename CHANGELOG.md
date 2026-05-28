@@ -4,6 +4,17 @@ All notable changes to `georgeff/kernel` are documented here.
 
 ---
 
+## [1.3.0] — 2026-05-28
+
+### Added
+- `shutdown()` on `KernelInterface` and `Kernel` — runs the shutdown lifecycle; idempotent and a no-op if the kernel has not been booted
+- `isShutdown()` on `KernelInterface` and `Kernel` — returns `true` after `shutdown()` has completed
+- `onBooted()` — registers a post-boot callback that fires after boot completes and the `KernelBooted` event has been dispatched; must be registered before `boot()` is called
+- `onShutdown()` — registers a pre-shutdown callback; fires before the kernel is marked as shut down; can be registered before or after boot, but not after shutdown
+- `afterShutdown()` — registers a post-shutdown callback; fires after the kernel is marked as shut down; same registration window as `onShutdown()`
+
+---
+
 ## [1.2.0] — 2026-05-27
 
 ### Added
