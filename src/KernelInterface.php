@@ -93,10 +93,21 @@ interface KernelInterface
      * @param callable(ContainerInterface): mixed  $factory
      * @param bool                                 $shared
      * @param string[]                             $aliases
+     * @param string[]                             $tags
      *
      * @return static
      */
-    public function addDefinition(string $id, callable $factory, bool $shared = false, array $aliases = []): static;
+    public function addDefinition(string $id, callable $factory, bool $shared = false, array $aliases = [], array $tags = []): static;
+
+    /**
+     * Tag a container definition
+     *
+     * @param string   $id
+     * @param string[] $tags
+     *
+     * @return static
+     */
+    public function tag(string $id, array $tags): static;
 
     /**
      * Add a module to the kernel
