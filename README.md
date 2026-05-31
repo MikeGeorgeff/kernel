@@ -59,6 +59,53 @@ $kernel->addDefinition(
 
 Definitions registered later with the same ID will overwrite earlier ones, allowing base definitions to be overridden.
 
+### Definition Tags
+
+Tags group service definitions under a shared label so they can be collected and resolved together. Pass a `tags` array to `addDefinition()`:
+
+```php
+$kernel->addDefinition(
+    FirstMiddleware::class,
+    fn() => new FirstMiddleware(),
+    shared: true,
+    tags: ['http.middleware'],
+);
+
+$kernel->addDefinition(
+    SecondMiddleware::class,
+    fn() => new SecondMiddleware(),
+    shared: true,
+    tags: ['http.middleware'],
+);
+```
+
+Retrieve all services for a tag via `TagRegistryInterface` after boot:
+
+```php
+use Georgeff\Kernel\DI\TagRegistryInterface;
+
+$kernel->boot();
+
+$registry   = $kernel->getContainer()->get(TagRegistryInterface::class);
+$middleware = $registry->getTagged('http.middleware');
+// [FirstMiddleware, SecondMiddleware] — resolved in registration order
+```
+
+`tag()` is available as a standalone method for cases where the definition comes from another module or package:
+
+```php
+final class MiddlewareModule implements ModuleInterface
+{
+    public function register(KernelInterface $kernel): void
+    {
+        // Tag a service defined by a different module
+        $kernel->tag(RouterMiddleware::class, ['http.middleware']);
+    }
+}
+```
+
+Both `addDefinition()` and `tag()` throw `KernelException` if called after boot. Registering the same ID/tag pair more than once is idempotent.
+
 ### Modules
 
 Modules are self-contained units that contribute service definitions, configuration, and boot logic to the kernel. They replace ad-hoc `addDefinition()` calls with composable, reusable pieces.
@@ -347,6 +394,7 @@ The kernel registers the following services in the container during boot:
 - `kernel.environment` — the environment string value (e.g. `'production'`)
 - `kernel.debug` — the debug flag (`bool`)
 - `kernel.config` — the merged config array from all `ConfigurableModuleInterface` modules (`[]` if none)
+- `kernel.tag.registry` (aliased to `TagRegistryInterface`) — the tag registry
 
 These IDs cannot be overwritten via `addDefinition`. The `kernel.*` namespace is reserved for the kernel — any service ID with that prefix should be considered owned by the package and subject to change between minor versions.
 
