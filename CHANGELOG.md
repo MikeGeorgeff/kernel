@@ -4,6 +4,15 @@ All notable changes to `georgeff/kernel` are documented here.
 
 ---
 
+## [1.4.0] — 2026-05-31
+
+### Added
+- `TagRegistryInterface` with `getTagged(string $tag): array` — resolves and returns all services registered under a given tag; available in the container as `kernel.tag.registry` (aliased to `TagRegistryInterface::class`)
+- `tag(string $id, array $tags)` on `KernelInterface` and `Kernel` — tags an existing definition by service ID; throws if called after boot; duplicate tag/id pairs are silently ignored
+- `addDefinition()` accepts a fifth `$tags` parameter; equivalent to calling `tag()` immediately after registration
+
+---
+
 ## [1.3.0] — 2026-05-28
 
 ### Added

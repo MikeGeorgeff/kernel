@@ -19,6 +19,11 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
     private array $definitions = [];
 
     /**
+     * @var array<string, string[]>
+     */
+    private array $tags = [];
+
+    /**
      * @var string[]
      */
     private array $reservedServices = [];
@@ -70,10 +75,9 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
         $this->environment = $environment;
         $this->registrar   = $registrar ?: new DefaultServiceRegistrar();
         $this->debug       = $debug;
+        $this->modules     = new Module\ModuleLoader();
 
         $this->registerDefaultDefinitions();
-
-        $this->modules = new Module\ModuleLoader();
     }
 
     protected function dispatchKernelEvent(Event\KernelEvent $event): void
@@ -108,9 +112,15 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
 
     private function registerDefaultDefinitions(): void
     {
-        $this->addReserved(KernelInterface::class, $this, true, ['kernel'])
-             ->addReserved('kernel.debug', $this->isDebug(), true)
-             ->addReserved('kernel.environment', $this->getEnvironment(), true);
+        $this->addReserved(KernelInterface::class, fn() => $this, true, ['kernel'])
+             ->addReserved('kernel.debug', fn() => $this->isDebug(), true)
+             ->addReserved('kernel.environment', fn() => $this->getEnvironment(), true)
+             ->addReserved(
+                 DI\TagRegistryInterface::class,
+                 fn(ContainerInterface $c) => new DI\TagRegistry($c, $this->tags),
+                 true,
+                 ['kernel.tag.registry']
+             );
 
         $this->reservedServices[] = 'kernel.config';
     }
@@ -135,7 +145,9 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
         $this->lockModules = true;
 
         $this->profile('moduleLoad', function () {
-            $this->addReserved('kernel.config', $this->modules->load($this->environment), true);
+            $config = $this->modules->load($this->environment);
+
+            $this->addReserved('kernel.config', fn() => $config, true);
         });
 
         $this->profile('moduleRegistration', function () {
@@ -297,10 +309,10 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
      *
      * @param string[] $aliases
      */
-    private function addReserved(string $id, mixed $instance, bool $shared = false, array $aliases = []): static
+    private function addReserved(string $id, callable $factory, bool $shared = false, array $aliases = []): static
     {
         $this->definitions[$id] = [
-            'factory' => fn() => $instance,
+            'factory' => $factory,
             'shared'  => $shared,
             'aliases' => $aliases,
         ];
@@ -317,7 +329,7 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
     /**
      * @inheritdoc
      */
-    public function addDefinition(string $id, callable $factory, bool $shared = false, array $aliases = []): static
+    public function addDefinition(string $id, callable $factory, bool $shared = false, array $aliases = [], array $tags = []): static
     {
         if ($this->isBooted()) {
             throw new KernelException('Kernel has already been booted, cannot add new container definitions');
@@ -334,6 +346,30 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
             'shared'  => $shared,
             'aliases' => $aliases,
         ];
+
+        foreach ($tags as $tag) {
+            if (!in_array($id, $this->tags[$tag] ?? [], true)) {
+                $this->tags[$tag][] = $id;
+            }
+        }
+
+        return $this;
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function tag(string $id, array $tags): static
+    {
+        if ($this->isBooted()) {
+            throw new KernelException('Kernel has already been booted, cannot add new container definition tags');
+        }
+
+        foreach ($tags as $tag) {
+            if (!in_array($id, $this->tags[$tag] ?? [], true)) {
+                $this->tags[$tag][] = $id;
+            }
+        }
 
         return $this;
     }

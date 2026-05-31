@@ -2,6 +2,7 @@
 
 namespace Georgeff\Kernel\Test;
 
+use Georgeff\Kernel\DI\TagRegistryInterface;
 use Georgeff\Kernel\Environment;
 use Georgeff\Kernel\Event\KernelBooted;
 use Georgeff\Kernel\Kernel;
@@ -1215,6 +1216,153 @@ class KernelTest extends TestCase
         $kernel->shutdown();
 
         $this->assertSame(['onShutdown', 'afterShutdown'], $order);
+    }
+
+    // -------------------------------------------------------------------------
+    // tag()
+    // -------------------------------------------------------------------------
+
+    public function test_tag_returns_the_kernel(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->addDefinition('my.service', fn() => new \stdClass());
+
+        $result = $kernel->tag('my.service', ['my.tag']);
+
+        $this->assertSame($kernel, $result);
+    }
+
+    public function test_tag_throws_after_boot(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->boot();
+
+        $this->expectException(KernelException::class);
+        $this->expectExceptionMessage('Kernel has already been booted, cannot add new container definition tags');
+
+        $kernel->tag('kernel', ['some.tag']);
+    }
+
+    public function test_tag_does_not_create_duplicate_entries(): void
+    {
+        $service = new \stdClass();
+
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->addDefinition('my.service', fn() => $service, true);
+        $kernel->tag('my.service', ['my.tag']);
+        $kernel->tag('my.service', ['my.tag']);
+        $kernel->boot();
+
+        $this->assertCount(1, $kernel->getContainer()->get(TagRegistryInterface::class)->getTagged('my.tag'));
+    }
+
+    // -------------------------------------------------------------------------
+    // TagRegistry
+    // -------------------------------------------------------------------------
+
+    public function test_it_registers_tag_registry_in_container(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->boot();
+
+        $this->assertTrue($kernel->getContainer()->has(TagRegistryInterface::class));
+        $this->assertInstanceOf(TagRegistryInterface::class, $kernel->getContainer()->get(TagRegistryInterface::class));
+    }
+
+    public function test_tag_registry_is_accessible_by_alias(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->boot();
+
+        $container = $kernel->getContainer();
+
+        $this->assertTrue($container->has('kernel.tag.registry'));
+        $this->assertSame($container->get(TagRegistryInterface::class), $container->get('kernel.tag.registry'));
+    }
+
+    public function test_tag_registry_interface_is_reserved(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+
+        $this->expectException(KernelException::class);
+        $this->expectExceptionMessage('Cannot overwrite a reserved service definition');
+
+        $kernel->addDefinition(TagRegistryInterface::class, fn() => null);
+    }
+
+    public function test_kernel_tag_registry_alias_is_reserved(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+
+        $this->expectException(KernelException::class);
+        $this->expectExceptionMessage('Cannot overwrite a reserved service definition');
+
+        $kernel->addDefinition('foo', fn() => null, false, ['kernel.tag.registry']);
+    }
+
+    public function test_tag_registry_resolves_services_tagged_via_add_definition(): void
+    {
+        $service = new \stdClass();
+
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->addDefinition('my.service', fn() => $service, true, [], ['my.tag']);
+        $kernel->boot();
+
+        $tagged = $kernel->getContainer()->get(TagRegistryInterface::class)->getTagged('my.tag');
+
+        $this->assertSame([$service], $tagged);
+    }
+
+    public function test_tag_registry_resolves_services_tagged_via_tag_method(): void
+    {
+        $service = new \stdClass();
+
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->addDefinition('my.service', fn() => $service, true);
+        $kernel->tag('my.service', ['my.tag']);
+        $kernel->boot();
+
+        $tagged = $kernel->getContainer()->get(TagRegistryInterface::class)->getTagged('my.tag');
+
+        $this->assertSame([$service], $tagged);
+    }
+
+    public function test_tag_registry_returns_empty_array_for_unknown_tag(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->boot();
+
+        $tagged = $kernel->getContainer()->get(TagRegistryInterface::class)->getTagged('unknown.tag');
+
+        $this->assertSame([], $tagged);
+    }
+
+    public function test_module_can_tag_services_from_another_module(): void
+    {
+        $service = new \stdClass();
+
+        $definingModule = new class($service) implements ModuleInterface {
+            public function __construct(private \stdClass $service) {}
+            public function register(KernelInterface $kernel): void
+            {
+                $kernel->addDefinition('other.service', fn() => $this->service, true);
+            }
+        };
+
+        $taggingModule = new class implements ModuleInterface {
+            public function register(KernelInterface $kernel): void
+            {
+                $kernel->tag('other.service', ['shared.tag']);
+            }
+        };
+
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->addModule($definingModule)->addModule($taggingModule);
+        $kernel->boot();
+
+        $tagged = $kernel->getContainer()->get(TagRegistryInterface::class)->getTagged('shared.tag');
+
+        $this->assertSame([$service], $tagged);
     }
 
     private function createMockRegistrar(): ServiceRegistrar&\PHPUnit\Framework\MockObject\MockObject
