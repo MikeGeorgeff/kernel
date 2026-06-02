@@ -3,6 +3,7 @@
 namespace Georgeff\Kernel;
 
 use Psr\Container\ContainerInterface;
+use Georgeff\Kernel\DI\DefinitionInterface;
 use Georgeff\Kernel\Module\ModuleInterface;
 use Psr\EventDispatcher\EventDispatcherInterface;
 use Georgeff\Kernel\Module\ModuleRepositoryInterface;
@@ -13,10 +14,7 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
 
     protected ?Debug\Profiler $bootProfile = null;
 
-    /**
-     * @var array<string, array{factory: callable, shared: bool, aliases: string[]}>
-     */
-    private array $definitions = [];
+    private DI\DefinitionRepository $definitions;
 
     /**
      * @var array<string, string[]>
@@ -76,6 +74,7 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
         $this->registrar   = $registrar ?: new DefaultServiceRegistrar();
         $this->debug       = $debug;
         $this->modules     = new Module\ModuleLoader();
+        $this->definitions = new DI\DefinitionRepository();
 
         $this->registerDefaultDefinitions();
     }
@@ -112,17 +111,23 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
 
     private function registerDefaultDefinitions(): void
     {
-        $this->addReserved(KernelInterface::class, fn() => $this, true, ['kernel'])
-             ->addReserved('kernel.debug', fn() => $this->isDebug(), true)
-             ->addReserved('kernel.environment', fn() => $this->getEnvironment(), true)
-             ->addReserved(
-                 DI\TagRegistryInterface::class,
-                 fn(ContainerInterface $c) => new DI\TagRegistry($c, $this->tags),
-                 true,
-                 ['kernel.tag.registry']
-             );
+        $this->definitions->add(KernelInterface::class, fn() => $this)->share()->alias('kernel');
+        $this->definitions->add('kernel.debug', fn() => $this->isDebug())->share();
+        $this->definitions->add('kernel.environment', fn() => $this->getEnvironment())->share();
+        $this->definitions
+             ->add(DI\TagRegistryInterface::class, fn(ContainerInterface $c) => new DI\TagRegistry($c, $this->tags))
+             ->share()
+             ->alias('kernel.tag.registry');
 
-        $this->reservedServices[] = 'kernel.config';
+        $this->reservedServices = [
+            KernelInterface::class,
+            DI\TagRegistryInterface::class,
+            'kernel',
+            'kernel.config',
+            'kernel.debug',
+            'kernel.environment',
+            'kernel.tag.registry',
+        ];
     }
 
     /**
@@ -147,7 +152,7 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
         $this->profile('moduleLoad', function () {
             $config = $this->modules->load($this->environment);
 
-            $this->addReserved('kernel.config', fn() => $config, true);
+            $this->definitions->add('kernel.config', fn() => $config)->share();
         });
 
         $this->profile('moduleRegistration', function () {
@@ -155,21 +160,29 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
         });
 
         $this->profile('serviceRegistration', function () {
-            foreach ($this->definitions as $id => $definition) {
-                $this->registrar->register(
-                    $id,
-                    $definition['factory'],
-                    $definition['shared'],
-                    $definition['aliases']
-                );
+            foreach ($this->definitions->all() as $definition) {
+                $id      = $definition->getId();
+                $aliases = $definition->getAliases();
+
+                if (!in_array($id, $this->reservedServices, true) && array_intersect($this->reservedServices, $aliases)) {
+                    throw new KernelException('Cannot overwrite a reserved service definition');
+                }
+
+                $this->registrar->register($id, $definition->getFactory(), $definition->isShared(), $aliases);
+
+                foreach ($definition->getTags() as $tag) {
+                    if (!in_array($id, $this->tags[$tag] ?? [], true)) {
+                        $this->tags[$tag][] = $id;
+                    }
+                }
             }
         });
 
         $this->profile('containerInit', function () {
             $this->container = $this->registrar->getContainer();
 
-            if ($this->bootProfile !== null) {
-                $this->container = new Debug\DebugContainer($this->container, $this->definitions);
+            if (null !== $this->bootProfile) {
+                $this->container = new Debug\DebugContainer($this->container, $this->definitions->getRaw());
             }
         });
 
@@ -305,55 +318,38 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
     }
 
     /**
-     * Add a reserved definition
-     *
-     * @param string[] $aliases
+     * @inheritdoc
      */
-    private function addReserved(string $id, callable $factory, bool $shared = false, array $aliases = []): static
+    public function addDefinition(string $id, callable $factory, bool $shared = false, array $aliases = [], array $tags = []): static
     {
-        $this->definitions[$id] = [
-            'factory' => $factory,
-            'shared'  => $shared,
-            'aliases' => $aliases,
-        ];
+        $definition = $this->define($id, $factory);
 
-        foreach ([$id, ...$aliases] as $serviceId) {
-            if (!in_array($serviceId, $this->reservedServices, true)) {
-                $this->reservedServices[] = $serviceId;
-            }
+        if ($shared) {
+            $definition->share();
+        }
+
+        foreach ($aliases as $alias) {
+            $definition->alias($alias);
+        }
+
+        foreach ($tags as $tag) {
+            $definition->tag($tag);
         }
 
         return $this;
     }
 
-    /**
-     * @inheritdoc
-     */
-    public function addDefinition(string $id, callable $factory, bool $shared = false, array $aliases = [], array $tags = []): static
+    public function define(string $id, callable $factory): DefinitionInterface
     {
         if ($this->isBooted()) {
             throw new KernelException('Kernel has already been booted, cannot add new container definitions');
         }
 
-        $reserved = $this->reservedServices;
-
-        if (in_array($id, $reserved, true) || array_intersect($reserved, $aliases)) {
+        if (in_array($id, $this->reservedServices, true)) {
             throw new KernelException('Cannot overwrite a reserved service definition');
         }
 
-        $this->definitions[$id] = [
-            'factory' => $factory,
-            'shared'  => $shared,
-            'aliases' => $aliases,
-        ];
-
-        foreach ($tags as $tag) {
-            if (!in_array($id, $this->tags[$tag] ?? [], true)) {
-                $this->tags[$tag][] = $id;
-            }
-        }
-
-        return $this;
+        return $this->definitions->add($id, $factory);
     }
 
     /**
@@ -365,9 +361,11 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
             throw new KernelException('Kernel has already been booted, cannot add new container definition tags');
         }
 
-        foreach ($tags as $tag) {
-            if (!in_array($id, $this->tags[$tag] ?? [], true)) {
-                $this->tags[$tag][] = $id;
+        $definition = $this->definitions->get($id);
+
+        if (null !== $definition) {
+            foreach ($tags as $tag) {
+                $definition->tag($tag);
             }
         }
 

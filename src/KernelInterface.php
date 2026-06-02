@@ -4,6 +4,7 @@ namespace Georgeff\Kernel;
 
 use Psr\Container\ContainerInterface;
 use Georgeff\Kernel\Module\ModuleInterface;
+use Georgeff\Kernel\DI\DefinitionInterface;
 use Georgeff\Kernel\Module\ModuleRepositoryInterface;
 
 interface KernelInterface
@@ -98,6 +99,16 @@ interface KernelInterface
      * @return static
      */
     public function addDefinition(string $id, callable $factory, bool $shared = false, array $aliases = [], array $tags = []): static;
+
+    /**
+     * Add a container definition using the fluent builder
+     *
+     * @param string                              $id
+     * @param callable(ContainerInterface): mixed $factory
+     *
+     * @return DefinitionInterface
+     */
+    public function define(string $id, callable $factory): DefinitionInterface;
 
     /**
      * Tag a container definition
