@@ -4,6 +4,19 @@ All notable changes to `georgeff/kernel` are documented here.
 
 ---
 
+## [1.5.0] — 2026-06-02
+
+### Added
+- `define(string $id, callable $factory): DefinitionInterface` on `Kernel` — returns a fluent definition builder as an alternative to `addDefinition()`; the returned `DefinitionInterface` exposes `share()`, `alias(string $alias)`, and `tag(string $tag)`, each returning the same instance for chaining
+- `DefinitionInterface` — public contract for the fluent definition builder
+- `Definition` — concrete implementation of `DefinitionInterface`
+
+### Changed
+- `addDefinition()` is now implemented in terms of `define()` internally; behavior is unchanged
+- Reserved service guard for aliases moved from call time to the `serviceRegistration` boot phase; ID collisions are still caught immediately at `define()` / `addDefinition()` call time
+
+---
+
 ## [1.4.0] — 2026-05-31
 
 ### Added

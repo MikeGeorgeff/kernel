@@ -59,6 +59,27 @@ $kernel->addDefinition(
 
 Definitions registered later with the same ID will overwrite earlier ones, allowing base definitions to be overridden.
 
+### Fluent Definition Builder
+
+`define()` is an alternative to `addDefinition()` that returns the definition for fluent configuration:
+
+```php
+$kernel->define('db.connection', fn() => new PdoConnection($dsn, $user, $pass))
+    ->share()
+    ->alias(ConnectionInterface::class)
+    ->tag('db.connections');
+```
+
+The builder methods are:
+
+| Method | Description |
+|---|---|
+| `share()` | Register the service as a singleton |
+| `alias(string $alias)` | Add a container alias |
+| `tag(string $tag)` | Add a tag |
+
+All three return the same definition instance, so they can be chained in any order. `addDefinition()` remains available for cases where all options are known upfront.
+
 ### Definition Tags
 
 Tags group service definitions under a shared label so they can be collected and resolved together. Pass a `tags` array to `addDefinition()`:

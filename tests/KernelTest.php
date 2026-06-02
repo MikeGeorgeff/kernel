@@ -202,6 +202,7 @@ class KernelTest extends TestCase
         $this->expectExceptionMessage('Cannot overwrite a reserved service definition');
 
         $kernel->addDefinition('kernel', fn() => 'fake');
+        $kernel->boot();
     }
 
     public function test_it_throws_when_adding_definition_with_reserved_kernel_interface_id(): void
@@ -212,6 +213,7 @@ class KernelTest extends TestCase
         $this->expectExceptionMessage('Cannot overwrite a reserved service definition');
 
         $kernel->addDefinition(KernelInterface::class, fn() => 'fake');
+        $kernel->boot();
     }
 
     public function test_it_throws_when_adding_definition_with_reserved_kernel_alias(): void
@@ -221,6 +223,7 @@ class KernelTest extends TestCase
         $this->expectException(KernelException::class);
 
         $kernel->addDefinition('foo', fn() => 'bar', false, ['kernel']);
+        $kernel->boot();
     }
 
     public function test_it_throws_when_adding_definition_with_reserved_kernel_interface_alias(): void
@@ -230,6 +233,7 @@ class KernelTest extends TestCase
         $this->expectException(KernelException::class);
 
         $kernel->addDefinition('foo', fn() => 'bar', false, [KernelInterface::class]);
+        $kernel->boot();
     }
 
     public function test_on_booting_callback_is_called_during_boot(): void
@@ -597,6 +601,7 @@ class KernelTest extends TestCase
         $this->expectExceptionMessage('Cannot overwrite a reserved service definition');
 
         $kernel->addDefinition('kernel.environment', fn() => 'fake');
+        $kernel->boot();
     }
 
     public function test_it_throws_when_adding_definition_with_reserved_debug_id(): void
@@ -607,6 +612,7 @@ class KernelTest extends TestCase
         $this->expectExceptionMessage('Cannot overwrite a reserved service definition');
 
         $kernel->addDefinition('kernel.debug', fn() => 'fake');
+        $kernel->boot();
     }
 
     // -------------------------------------------------------------------------
@@ -929,6 +935,7 @@ class KernelTest extends TestCase
         $this->expectExceptionMessage('Cannot overwrite a reserved service definition');
 
         $kernel->addDefinition('kernel.config', fn() => []);
+        $kernel->boot();
     }
 
     // -------------------------------------------------------------------------
@@ -1288,6 +1295,7 @@ class KernelTest extends TestCase
         $this->expectExceptionMessage('Cannot overwrite a reserved service definition');
 
         $kernel->addDefinition(TagRegistryInterface::class, fn() => null);
+        $kernel->boot();
     }
 
     public function test_kernel_tag_registry_alias_is_reserved(): void
@@ -1298,6 +1306,7 @@ class KernelTest extends TestCase
         $this->expectExceptionMessage('Cannot overwrite a reserved service definition');
 
         $kernel->addDefinition('foo', fn() => null, false, ['kernel.tag.registry']);
+        $kernel->boot();
     }
 
     public function test_tag_registry_resolves_services_tagged_via_add_definition(): void
