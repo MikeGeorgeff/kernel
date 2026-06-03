@@ -159,6 +159,10 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
             $this->modules->register($this);
         });
 
+        $this->profile('serviceDecoration', function () {
+            $this->definitions->applyDecorators();
+        });
+
         $this->profile('serviceRegistration', function () {
             foreach ($this->definitions->all() as $definition) {
                 $id      = $definition->getId();
@@ -378,6 +382,24 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
                 $definition->tag($tag);
             }
         }
+
+        return $this;
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function decorate(string $id, callable $decorator): static
+    {
+        if ($this->isBooted()) {
+            throw new KernelException('Kernel has already been booted, cannot add new definition decorators');
+        }
+
+        if (in_array($id, $this->reservedServices, true)) {
+            throw new KernelException('Cannot decorate a reserved service definition');
+        }
+
+        $this->definitions->decorate($id, $decorator);
 
         return $this;
     }
