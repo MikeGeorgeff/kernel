@@ -24,6 +24,13 @@ interface KernelInterface
     public function shutdown(): void;
 
     /**
+     * Indicates if the kernel is booting
+     *
+     * @return bool
+     */
+    public function isBooting(): bool;
+
+    /**
      * Indicates if the kernel has been booted
      *
      * @return bool

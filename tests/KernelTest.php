@@ -663,7 +663,7 @@ class KernelTest extends TestCase
         $kernel->addModule($this->createStub(ModuleInterface::class));
     }
 
-    public function test_add_module_throws_when_locked(): void
+    public function test_add_module_throws_when_booting(): void
     {
         $kernel = new Kernel(Environment::Testing);
         $stub   = $this->createStub(ModuleInterface::class);
@@ -683,7 +683,7 @@ class KernelTest extends TestCase
         $kernel->addModule($module);
 
         $this->expectException(KernelException::class);
-        $this->expectExceptionMessage('Cannot add modules, modules are locked');
+        $this->expectExceptionMessage('Cannot add modules after the kernel has started booting');
 
         $kernel->boot();
     }
@@ -726,7 +726,7 @@ class KernelTest extends TestCase
         $kernel->addRepository($this->createStub(ModuleRepositoryInterface::class));
     }
 
-    public function test_add_repository_throws_when_locked(): void
+    public function test_add_repository_throws_when_booting(): void
     {
         $kernel = new Kernel(Environment::Testing);
         $stub   = $this->createStub(ModuleRepositoryInterface::class);
@@ -746,7 +746,7 @@ class KernelTest extends TestCase
         $kernel->addModule($module);
 
         $this->expectException(KernelException::class);
-        $this->expectExceptionMessage('Cannot add module repository, modules are locked');
+        $this->expectExceptionMessage('Cannot add module repository after the kernel has started booting');
 
         $kernel->boot();
     }
