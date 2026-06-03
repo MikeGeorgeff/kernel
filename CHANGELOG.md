@@ -4,6 +4,18 @@ All notable changes to `georgeff/kernel` are documented here.
 
 ---
 
+## [1.6.0] — 2026-06-03
+
+### Added
+- `decorate(string $id, callable $decorator): static` on `KernelInterface` and `Kernel` — wraps an existing service definition with a decorator; the decorator callable receives the resolved inner service and the container `(mixed $inner, ContainerInterface $container): mixed`; the decorated service inherits the original's shared flag, aliases, and tags; throws if called after boot or for a reserved service ID
+- `isBooting(): bool` on `KernelInterface` and `Kernel` — returns `true` while `boot()` is in progress, before `isBooted()` becomes `true`
+- `serviceDecoration` boot phase between `moduleRegistration` and `serviceRegistration` — all pending decorators are applied after modules have registered their definitions so module load order does not affect decoration
+
+### Changed
+- `addModule()` and `addRepository()` now throw with a distinct message when called while the kernel is booting (`isBooting()` is `true`), replacing the previous opaque "modules are locked" error
+
+---
+
 ## [1.5.0] — 2026-06-02
 
 ### Added

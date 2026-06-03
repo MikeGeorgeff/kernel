@@ -41,9 +41,9 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
      */
     protected bool $booted = false;
 
-    private bool $shutdown = false;
+    private bool $booting = false;
 
-    private bool $lockModules = false;
+    private bool $shutdown = false;
 
     /**
      * @var array<callable(KernelInterface): void>
@@ -147,7 +147,7 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
             }
         });
 
-        $this->lockModules = true;
+        $this->booting = true;
 
         $this->profile('moduleLoad', function () {
             $config = $this->modules->load($this->environment);
@@ -157,6 +157,10 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
 
         $this->profile('moduleRegistration', function () {
             $this->modules->register($this);
+        });
+
+        $this->profile('serviceDecoration', function () {
+            $this->definitions->applyDecorators();
         });
 
         $this->profile('serviceRegistration', function () {
@@ -194,6 +198,8 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
 
         $this->booted = true;
 
+        $this->booting = false;
+
         $this->profile('postBoot', function () {
             $this->dispatchKernelEvent(new Event\KernelBooted($this));
 
@@ -227,6 +233,14 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
         foreach ($this->postShutdownCallbacks as $callback) {
             $callback($this);
         }
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function isBooting(): bool
+    {
+        return $this->booting;
     }
 
     /**
@@ -375,14 +389,32 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
     /**
      * @inheritdoc
      */
+    public function decorate(string $id, callable $decorator): static
+    {
+        if ($this->isBooted()) {
+            throw new KernelException('Kernel has already been booted, cannot add new definition decorators');
+        }
+
+        if (in_array($id, $this->reservedServices, true)) {
+            throw new KernelException('Cannot decorate a reserved service definition');
+        }
+
+        $this->definitions->decorate($id, $decorator);
+
+        return $this;
+    }
+
+    /**
+     * @inheritdoc
+     */
     public function addModule(ModuleInterface $module): static
     {
         if ($this->isBooted()) {
             throw new KernelException('Kernel has already been booted, cannot add new modules');
         }
 
-        if ($this->lockModules) {
-            throw new KernelException('Cannot add modules, modules are locked');
+        if ($this->isBooting()) {
+            throw new KernelException('Cannot add modules after the kernel has started booting');
         }
 
         $this->modules->add($module);
@@ -399,8 +431,8 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
             throw new KernelException('Kernel has already been booted, cannot add new module repositories');
         }
 
-        if ($this->lockModules) {
-            throw new KernelException('Cannot add module repository, modules are locked');
+        if ($this->isBooting()) {
+            throw new KernelException('Cannot add module repository after the kernel has started booting');
         }
 
         $this->modules->addRepository($repository);

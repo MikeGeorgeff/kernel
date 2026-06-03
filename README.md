@@ -127,6 +127,50 @@ final class MiddlewareModule implements ModuleInterface
 
 Both `addDefinition()` and `tag()` throw `KernelException` if called after boot. Registering the same ID/tag pair more than once is idempotent.
 
+### Service Decoration
+
+`decorate()` wraps an existing service definition with a decorator. The decorator callable receives the resolved inner service and the container:
+
+```php
+$kernel->addDefinition(
+    LoggerInterface::class,
+    fn() => new FileLogger('/var/log/app.log'),
+    shared: true,
+);
+
+$kernel->decorate(
+    LoggerInterface::class,
+    fn(LoggerInterface $inner, ContainerInterface $c) => new TimestampLogger($inner),
+);
+
+$kernel->boot();
+
+$logger = $kernel->getContainer()->get(LoggerInterface::class);
+// TimestampLogger wrapping FileLogger
+```
+
+The decorated service automatically inherits the original's shared flag, aliases, and tags — existing consumers resolve the decorated version transparently.
+
+`decorate()` can be called from a module's `register()` method to decorate a service contributed by another module. Because decoration is applied after all modules have registered, load order does not matter:
+
+```php
+final class LoggingModule implements ModuleInterface
+{
+    public function register(KernelInterface $kernel): void
+    {
+        $kernel->decorate(
+            CacheInterface::class,
+            fn(CacheInterface $inner, ContainerInterface $c) => new LoggingCache(
+                $inner,
+                $c->get(LoggerInterface::class),
+            ),
+        );
+    }
+}
+```
+
+`decorate()` throws `KernelException` if called after boot, for a reserved service ID, or if the same ID is decorated more than once. A `KernelException` is also thrown at boot time if the target definition does not exist.
+
 ### Modules
 
 Modules are self-contained units that contribute service definitions, configuration, and boot logic to the kernel. They replace ad-hoc `addDefinition()` calls with composable, reusable pieces.
@@ -275,9 +319,10 @@ When `boot()` is called, modules are processed in this order:
 1. `onBooting` callbacks
 2. **Module load** — repositories are flattened into the module list; `config()` is called on all `ConfigurableModuleInterface` modules and the result is bound as `kernel.config`
 3. **Module registration** — `register()` is called on all modules
-4. Container initialization
-5. **Module boot** — `boot()` is called on all `BootableModuleInterface` modules
-6. `KernelBooted` event dispatched + `onBooted` callbacks
+4. **Service decoration** — pending decorators are applied after all modules have registered
+5. Container initialization
+6. **Module boot** — `boot()` is called on all `BootableModuleInterface` modules
+7. `KernelBooted` event dispatched + `onBooted` callbacks
 
 ### Lifecycle Callbacks
 
@@ -384,7 +429,7 @@ $kernel->getDebugInfo(); // boot profile + service resolution data
 
 The `getDebugInfo()` array contains:
 
-- `bootProfile` — timing for each boot phase (`preBoot`, `moduleLoad`, `moduleRegistration`, `serviceRegistration`, `containerInit`, `moduleBoot`)
+- `bootProfile` — timing for each boot phase (`preBoot`, `moduleLoad`, `moduleRegistration`, `serviceDecoration`, `serviceRegistration`, `containerInit`, `moduleBoot`)
 - `modules` — module loader state: which module classes were loaded and whether each phase has run
 - `serviceResolutionProfile` — which services were resolved and their resolution times
 - `servicesDebugInfo` — debug info collected from resolved services that implement `DebuggableInterface`

@@ -24,6 +24,13 @@ interface KernelInterface
     public function shutdown(): void;
 
     /**
+     * Indicates if the kernel is booting
+     *
+     * @return bool
+     */
+    public function isBooting(): bool;
+
+    /**
      * Indicates if the kernel has been booted
      *
      * @return bool
@@ -119,6 +126,16 @@ interface KernelInterface
      * @return static
      */
     public function tag(string $id, array $tags): static;
+
+    /**
+     * Decorate a container definition
+     *
+     * @param string                                     $id
+     * @param callable(mixed, ContainerInterface): mixed $decorator
+     *
+     * @return static
+     */
+    public function decorate(string $id, callable $decorator): static;
 
     /**
      * Add a module to the kernel

@@ -533,6 +533,7 @@ class KernelTest extends TestCase
         $this->assertArrayHasKey('duration', $info['bootProfile']);
         $this->assertArrayHasKey('phases', $info['bootProfile']);
         $this->assertArrayHasKey('preBoot', $info['bootProfile']['phases']);
+        $this->assertArrayHasKey('serviceDecoration', $info['bootProfile']['phases']);
         $this->assertArrayHasKey('serviceRegistration', $info['bootProfile']['phases']);
         $this->assertArrayHasKey('containerInit', $info['bootProfile']['phases']);
     }
@@ -663,7 +664,7 @@ class KernelTest extends TestCase
         $kernel->addModule($this->createStub(ModuleInterface::class));
     }
 
-    public function test_add_module_throws_when_locked(): void
+    public function test_add_module_throws_when_booting(): void
     {
         $kernel = new Kernel(Environment::Testing);
         $stub   = $this->createStub(ModuleInterface::class);
@@ -683,7 +684,7 @@ class KernelTest extends TestCase
         $kernel->addModule($module);
 
         $this->expectException(KernelException::class);
-        $this->expectExceptionMessage('Cannot add modules, modules are locked');
+        $this->expectExceptionMessage('Cannot add modules after the kernel has started booting');
 
         $kernel->boot();
     }
@@ -726,7 +727,7 @@ class KernelTest extends TestCase
         $kernel->addRepository($this->createStub(ModuleRepositoryInterface::class));
     }
 
-    public function test_add_repository_throws_when_locked(): void
+    public function test_add_repository_throws_when_booting(): void
     {
         $kernel = new Kernel(Environment::Testing);
         $stub   = $this->createStub(ModuleRepositoryInterface::class);
@@ -746,7 +747,7 @@ class KernelTest extends TestCase
         $kernel->addModule($module);
 
         $this->expectException(KernelException::class);
-        $this->expectExceptionMessage('Cannot add module repository, modules are locked');
+        $this->expectExceptionMessage('Cannot add module repository after the kernel has started booting');
 
         $kernel->boot();
     }
@@ -1223,6 +1224,183 @@ class KernelTest extends TestCase
         $kernel->shutdown();
 
         $this->assertSame(['onShutdown', 'afterShutdown'], $order);
+    }
+
+    // -------------------------------------------------------------------------
+    // decorate()
+    // -------------------------------------------------------------------------
+
+    public function test_decorate_returns_the_kernel(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->addDefinition('my.service', fn() => new \stdClass());
+
+        $result = $kernel->decorate('my.service', fn($inner, $c) => $inner);
+
+        $this->assertSame($kernel, $result);
+    }
+
+    public function test_decorate_is_fluent(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->addDefinition('foo', fn() => 'foo', true);
+        $kernel->addDefinition('bar', fn() => 'bar', true);
+
+        $kernel
+            ->decorate('foo', fn($inner, $c) => "decorated_{$inner}")
+            ->decorate('bar', fn($inner, $c) => "decorated_{$inner}");
+
+        $kernel->boot();
+
+        $this->assertSame('decorated_foo', $kernel->getContainer()->get('foo'));
+        $this->assertSame('decorated_bar', $kernel->getContainer()->get('bar'));
+    }
+
+    public function test_decorate_throws_after_boot(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->boot();
+
+        $this->expectException(KernelException::class);
+        $this->expectExceptionMessage('Kernel has already been booted, cannot add new definition decorators');
+
+        $kernel->decorate('my.service', fn($inner, $c) => $inner);
+    }
+
+    public function test_decorate_throws_for_reserved_service(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+
+        $this->expectException(KernelException::class);
+        $this->expectExceptionMessage('Cannot decorate a reserved service definition');
+
+        $kernel->decorate(KernelInterface::class, fn($inner, $c) => $inner);
+    }
+
+    public function test_decorate_throws_when_already_decorated(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->addDefinition('my.service', fn() => new \stdClass());
+        $kernel->decorate('my.service', fn($inner, $c) => $inner);
+
+        $this->expectException(KernelException::class);
+
+        $kernel->decorate('my.service', fn($inner, $c) => $inner);
+    }
+
+    public function test_decorate_throws_when_definition_does_not_exist(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->decorate('missing.service', fn($inner, $c) => $inner);
+
+        $this->expectException(KernelException::class);
+        $this->expectExceptionMessage('Cannot decorate a non-existing definition ID: [missing.service]');
+
+        $kernel->boot();
+    }
+
+    public function test_decorate_wraps_the_inner_service(): void
+    {
+        $inner = new \stdClass();
+
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->addDefinition('my.service', fn() => $inner, true);
+        $kernel->decorate('my.service', fn($i, $c) => ['decorated' => $i]);
+        $kernel->boot();
+
+        $result = $kernel->getContainer()->get('my.service');
+
+        $this->assertSame(['decorated' => $inner], $result);
+    }
+
+    public function test_decorate_passes_container_to_decorator(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->addDefinition('my.service', fn() => new \stdClass(), true);
+
+        $receivedContainer = null;
+        $kernel->decorate('my.service', function ($inner, $c) use (&$receivedContainer) {
+            $receivedContainer = $c;
+            return $inner;
+        });
+
+        $kernel->boot();
+        $kernel->getContainer()->get('my.service');
+
+        $this->assertSame($kernel->getContainer(), $receivedContainer);
+    }
+
+    public function test_decorate_inherits_shared_from_original(): void
+    {
+        $calls = 0;
+
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->addDefinition('my.service', fn() => new \stdClass(), true);
+        $kernel->decorate('my.service', function ($inner, $c) use (&$calls) {
+            $calls++;
+            return $inner;
+        });
+
+        $kernel->boot();
+        $kernel->getContainer()->get('my.service');
+        $kernel->getContainer()->get('my.service');
+
+        $this->assertSame(1, $calls);
+    }
+
+    public function test_decorate_inherits_alias_from_original(): void
+    {
+        $inner = new \stdClass();
+
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->addDefinition('my.service', fn() => $inner, true, ['my.alias']);
+        $kernel->decorate('my.service', fn($i, $c) => ['decorated' => $i]);
+        $kernel->boot();
+
+        $container = $kernel->getContainer();
+
+        $this->assertSame($container->get('my.service'), $container->get('my.alias'));
+    }
+
+    public function test_decorate_inherits_tags_from_original(): void
+    {
+        $inner = new \stdClass();
+
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->addDefinition('my.service', fn() => $inner, true, [], ['my.tag']);
+        $kernel->decorate('my.service', fn($i, $c) => ['decorated' => $i]);
+        $kernel->boot();
+
+        $tagged = $kernel->getContainer()->get(TagRegistryInterface::class)->getTagged('my.tag');
+
+        $this->assertCount(1, $tagged);
+        $this->assertSame(['decorated' => $inner], $tagged[0]);
+    }
+
+    public function test_module_can_decorate_service_from_another_module(): void
+    {
+        $inner = new \stdClass();
+
+        $definingModule = new class($inner) implements ModuleInterface {
+            public function __construct(private \stdClass $inner) {}
+            public function register(KernelInterface $kernel): void
+            {
+                $kernel->addDefinition('my.service', fn() => $this->inner, true);
+            }
+        };
+
+        $decoratingModule = new class implements ModuleInterface {
+            public function register(KernelInterface $kernel): void
+            {
+                $kernel->decorate('my.service', fn($i, $c) => ['decorated' => $i]);
+            }
+        };
+
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->addModule($definingModule)->addModule($decoratingModule);
+        $kernel->boot();
+
+        $this->assertSame(['decorated' => $inner], $kernel->getContainer()->get('my.service'));
     }
 
     // -------------------------------------------------------------------------

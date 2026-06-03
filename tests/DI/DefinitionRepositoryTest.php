@@ -4,7 +4,9 @@ namespace Georgeff\Kernel\Test\DI;
 
 use Georgeff\Kernel\DI\DefinitionInterface;
 use Georgeff\Kernel\DI\DefinitionRepository;
+use Georgeff\Kernel\KernelException;
 use PHPUnit\Framework\TestCase;
+use Psr\Container\ContainerInterface;
 
 class DefinitionRepositoryTest extends TestCase
 {
@@ -97,5 +99,171 @@ class DefinitionRepositoryTest extends TestCase
 
         $this->assertTrue($raw['foo']['shared']);
         $this->assertSame(['baz'], $raw['foo']['aliases']);
+    }
+
+    // -------------------------------------------------------------------------
+    // decorate()
+    // -------------------------------------------------------------------------
+
+    public function test_decorate_throws_when_already_decorated(): void
+    {
+        $repository = new DefinitionRepository();
+        $repository->add('foo', fn() => 'bar');
+        $repository->decorate('foo', fn($inner, $c) => $inner);
+
+        $this->expectException(KernelException::class);
+        $this->expectExceptionMessage('Cannot apply a decorator to an already decorated definition ID: [foo]');
+
+        $repository->decorate('foo', fn($inner, $c) => $inner);
+    }
+
+    public function test_decorate_does_not_immediately_modify_definitions(): void
+    {
+        $factory    = fn() => 'original';
+        $repository = new DefinitionRepository();
+        $repository->add('foo', $factory);
+        $repository->decorate('foo', fn($inner, $c) => $inner);
+
+        $this->assertSame($factory, $repository->get('foo')?->getFactory());
+    }
+
+    // -------------------------------------------------------------------------
+    // applyDecorators()
+    // -------------------------------------------------------------------------
+
+    public function test_apply_decorators_is_a_noop_when_no_decorators_registered(): void
+    {
+        $repository = new DefinitionRepository();
+        $repository->add('foo', fn() => 'bar');
+        $repository->applyDecorators();
+
+        $this->assertCount(1, $repository->all());
+    }
+
+    public function test_apply_decorators_throws_when_definition_not_found(): void
+    {
+        $repository = new DefinitionRepository();
+        $repository->decorate('foo', fn($inner, $c) => $inner);
+
+        $this->expectException(KernelException::class);
+        $this->expectExceptionMessage('Cannot decorate a non-existing definition ID: [foo]');
+
+        $repository->applyDecorators();
+    }
+
+    public function test_apply_decorators_registers_inner_definition(): void
+    {
+        $repository = new DefinitionRepository();
+        $repository->add('foo', fn() => 'bar');
+        $repository->decorate('foo', fn($inner, $c) => $inner);
+        $repository->applyDecorators();
+
+        $this->assertNotNull($repository->get('_foo.inner'));
+    }
+
+    public function test_apply_decorators_inner_has_original_factory(): void
+    {
+        $factory    = fn() => 'original';
+        $repository = new DefinitionRepository();
+        $repository->add('foo', $factory);
+        $repository->decorate('foo', fn($inner, $c) => $inner);
+        $repository->applyDecorators();
+
+        $this->assertSame($factory, $repository->get('_foo.inner')?->getFactory());
+    }
+
+    public function test_apply_decorators_inner_has_no_aliases(): void
+    {
+        $repository = new DefinitionRepository();
+        $repository->add('foo', fn() => 'bar')->alias('foo_alias');
+        $repository->decorate('foo', fn($inner, $c) => $inner);
+        $repository->applyDecorators();
+
+        $this->assertSame([], $repository->get('_foo.inner')?->getAliases());
+    }
+
+    public function test_apply_decorators_inner_has_no_tags(): void
+    {
+        $repository = new DefinitionRepository();
+        $repository->add('foo', fn() => 'bar')->tag('my.tag');
+        $repository->decorate('foo', fn($inner, $c) => $inner);
+        $repository->applyDecorators();
+
+        $this->assertSame([], $repository->get('_foo.inner')?->getTags());
+    }
+
+    public function test_apply_decorators_outer_inherits_shared_from_original(): void
+    {
+        $repository = new DefinitionRepository();
+        $repository->add('foo', fn() => 'bar')->share();
+        $repository->decorate('foo', fn($inner, $c) => $inner);
+        $repository->applyDecorators();
+
+        $this->assertTrue($repository->get('foo')?->isShared());
+    }
+
+    public function test_apply_decorators_outer_is_not_shared_when_original_is_not(): void
+    {
+        $repository = new DefinitionRepository();
+        $repository->add('foo', fn() => 'bar');
+        $repository->decorate('foo', fn($inner, $c) => $inner);
+        $repository->applyDecorators();
+
+        $this->assertFalse($repository->get('foo')?->isShared());
+    }
+
+    public function test_apply_decorators_outer_inherits_aliases_from_original(): void
+    {
+        $repository = new DefinitionRepository();
+        $repository->add('foo', fn() => 'bar')->alias('foo_alias');
+        $repository->decorate('foo', fn($inner, $c) => $inner);
+        $repository->applyDecorators();
+
+        $this->assertSame(['foo_alias'], $repository->get('foo')?->getAliases());
+    }
+
+    public function test_apply_decorators_outer_inherits_tags_from_original(): void
+    {
+        $repository = new DefinitionRepository();
+        $repository->add('foo', fn() => 'bar')->tag('my.tag');
+        $repository->decorate('foo', fn($inner, $c) => $inner);
+        $repository->applyDecorators();
+
+        $this->assertSame(['my.tag'], $repository->get('foo')?->getTags());
+    }
+
+    public function test_apply_decorators_outer_factory_passes_inner_and_container_to_decorator(): void
+    {
+        $inner     = new \stdClass();
+        $container = $this->createMock(ContainerInterface::class);
+        $container->method('get')->with('_foo.inner')->willReturn($inner);
+
+        $received = [];
+        $decorator = function ($i, $c) use (&$received) {
+            $received = [$i, $c];
+            return $i;
+        };
+
+        $repository = new DefinitionRepository();
+        $repository->add('foo', fn() => $inner);
+        $repository->decorate('foo', $decorator);
+        $repository->applyDecorators();
+
+        ($repository->get('foo')?->getFactory())($container);
+
+        $this->assertSame($inner, $received[0]);
+        $this->assertSame($container, $received[1]);
+    }
+
+    public function test_apply_decorators_does_not_affect_undecorated_definitions(): void
+    {
+        $factory    = fn() => 'bar';
+        $repository = new DefinitionRepository();
+        $repository->add('foo', fn() => 'foo');
+        $repository->add('bar', $factory);
+        $repository->decorate('foo', fn($inner, $c) => $inner);
+        $repository->applyDecorators();
+
+        $this->assertSame($factory, $repository->get('bar')?->getFactory());
     }
 }
