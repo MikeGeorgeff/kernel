@@ -30,6 +30,8 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
 
     private ServiceRegistrar $registrar;
 
+    private Hook\HookRepository $hooks;
+
     protected ?ContainerInterface $container = null;
 
     protected Environment $environment;
@@ -45,26 +47,6 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
 
     private bool $shutdown = false;
 
-    /**
-     * @var array<callable(KernelInterface): void>
-     */
-    private array $preBootCallbacks = [];
-
-    /**
-     * @var array<callable(KernelInterface): void>
-     */
-    private array $postBootCallbacks = [];
-
-    /**
-     * @var array<callable(KernelInterface): void>
-     */
-    private array $preShutdownCallbacks = [];
-
-    /**
-     * @var array<callable(KernelInterface): void>
-     */
-    private array $postShutdownCallbacks = [];
-
     public function __construct(
         Environment $environment,
         ?ServiceRegistrar $registrar = null,
@@ -75,6 +57,7 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
         $this->debug       = $debug;
         $this->modules     = new Module\ModuleLoader();
         $this->definitions = new DI\DefinitionRepository();
+        $this->hooks       = new Hook\HookRepository();
 
         $this->registerDefaultDefinitions();
     }
@@ -142,7 +125,7 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
         $this->initProfiler();
 
         $this->profile('preBoot', function () {
-            foreach ($this->preBootCallbacks as $callback) {
+            foreach ($this->hooks->getOnBootingCallbacks() as $callback) {
                 $callback($this);
             }
         });
@@ -203,7 +186,7 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
         $this->profile('postBoot', function () {
             $this->dispatchKernelEvent(new Event\KernelBooted($this));
 
-            foreach ($this->postBootCallbacks as $callback) {
+            foreach ($this->hooks->getOnBootedCallbacks() as $callback) {
                 $callback($this);
             }
         });
@@ -224,13 +207,13 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
             return;
         }
 
-        foreach ($this->preShutdownCallbacks as $callback) {
+        foreach ($this->hooks->getOnShutdownCallbacks() as $callback) {
             $callback($this);
         }
 
         $this->shutdown = true;
 
-        foreach ($this->postShutdownCallbacks as $callback) {
+        foreach ($this->hooks->getAfterShutdownCallbacks() as $callback) {
             $callback($this);
         }
     }
@@ -280,11 +263,9 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
      */
     public function onBooting(callable $callback): static
     {
-        if ($this->isBooted()) {
-            throw new KernelException('Kernel has already been booted, cannot add new pre-boot callbacks');
-        }
+        KernelException::throwIf($this->isBooted(), 'Kernel has already been booted, cannot add new pre-boot callbacks');
 
-        $this->preBootCallbacks[] = $callback;
+        $this->hooks->onBooting($callback);
 
         return $this;
     }
@@ -294,11 +275,9 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
      */
     public function onBooted(callable $callback): static
     {
-        if ($this->isBooted()) {
-            throw new KernelException('Kernel has already been booted, cannot add new post-boot callbacks');
-        }
+        KernelException::throwIf($this->isBooted(), 'Kernel has already been booted, cannot add new post-boot callbacks');
 
-        $this->postBootCallbacks[] = $callback;
+        $this->hooks->onBooted($callback);
 
         return $this;
     }
@@ -308,11 +287,9 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
      */
     public function onShutdown(callable $callback): static
     {
-        if ($this->isShutdown()) {
-            throw new KernelException('Kernel has already been shutdown, cannot add new pre-shutdown callbacks');
-        }
+        KernelException::throwIf($this->isShutdown(), 'Kernel has already been shutdown, cannot add new pre-shutdown callbacks');
 
-        $this->preShutdownCallbacks[] = $callback;
+        $this->hooks->onShutdown($callback);
 
         return $this;
     }
@@ -322,11 +299,9 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
      */
     public function afterShutdown(callable $callback): static
     {
-        if ($this->isShutdown()) {
-            throw new KernelException('Kernel has already been shutdown, cannot add new post-shutdown callbacks');
-        }
+        KernelException::throwIf($this->isShutdown(), 'Kernel has already been shutdown, cannot add new post-shutdown callbacks');
 
-        $this->postShutdownCallbacks[] = $callback;
+        $this->hooks->afterShutdown($callback);
 
         return $this;
     }
@@ -355,12 +330,10 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
 
     public function define(string $id, callable $factory): DefinitionInterface
     {
-        if ($this->isBooted()) {
-            throw new KernelException('Kernel has already been booted, cannot add new container definitions');
-        }
+        KernelException::throwIf($this->isBooted(), 'Kernel has already been booted, cannot add new container definitions');
 
         if (in_array($id, $this->reservedServices, true)) {
-            throw new KernelException('Cannot overwrite a reserved service definition');
+            KernelException::throw('Cannot overwrite a reserved service definition');
         }
 
         return $this->definitions->add($id, $factory);
@@ -371,9 +344,7 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
      */
     public function tag(string $id, array $tags): static
     {
-        if ($this->isBooted()) {
-            throw new KernelException('Kernel has already been booted, cannot add new container definition tags');
-        }
+        KernelException::throwIf($this->isBooted(), 'Kernel has already been booted, cannot add new container definition tags');
 
         $definition = $this->definitions->get($id);
 
@@ -391,12 +362,10 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
      */
     public function decorate(string $id, callable $decorator): static
     {
-        if ($this->isBooted()) {
-            throw new KernelException('Kernel has already been booted, cannot add new definition decorators');
-        }
+        KernelException::throwIf($this->isBooted(), 'Kernel has already been booted, cannot add new definition decorators');
 
         if (in_array($id, $this->reservedServices, true)) {
-            throw new KernelException('Cannot decorate a reserved service definition');
+            KernelException::throw('Cannot decorate a reserved service definition');
         }
 
         $this->definitions->decorate($id, $decorator);
@@ -409,13 +378,9 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
      */
     public function addModule(ModuleInterface $module): static
     {
-        if ($this->isBooted()) {
-            throw new KernelException('Kernel has already been booted, cannot add new modules');
-        }
+        KernelException::throwIf($this->isBooted(), 'Kernel has already been booted, cannot add new modules');
 
-        if ($this->isBooting()) {
-            throw new KernelException('Cannot add modules after the kernel has started booting');
-        }
+        KernelException::throwIf($this->isBooting(), 'Cannot add modules after the kernel has started booting');
 
         $this->modules->add($module);
 
@@ -427,13 +392,9 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
      */
     public function addRepository(ModuleRepositoryInterface $repository): static
     {
-        if ($this->isBooted()) {
-            throw new KernelException('Kernel has already been booted, cannot add new module repositories');
-        }
+        KernelException::throwIf($this->isBooted(), 'Kernel has already been booted, cannot add new module repositories');
 
-        if ($this->isBooting()) {
-            throw new KernelException('Cannot add module repository after the kernel has started booting');
-        }
+        KernelException::throwIf($this->isBooting(), 'Cannot add module repository after the kernel has started booting');
 
         $this->modules->addRepository($repository);
 
@@ -445,9 +406,9 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
      */
     public function getContainer(): ContainerInterface
     {
-        if (!$this->isBooted() || !$this->container) {
-            throw new KernelException('Container is inaccessible, kernel has not been booted');
-        }
+        KernelException::throwIfNot($this->isBooted(), 'Container is inaccessible, kernel has not been booted');
+
+        assert(null !== $this->container);
 
         return $this->container;
     }
