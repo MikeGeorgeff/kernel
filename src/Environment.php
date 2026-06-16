@@ -8,4 +8,5 @@ enum Environment: string
     case Staging     = 'staging';
     case Development = 'development';
     case Testing     = 'testing';
+    case Local       = 'local';
 }
