@@ -4,6 +4,20 @@ All notable changes to `georgeff/kernel` are documented here.
 
 ---
 
+## [1.7.0] — 2026-06-15
+
+### Added
+- `Environment::Local` — new enum case (`'local'`) for local development machines; `Environment::Development` remains the remote dev/integration tier; additive, no breaking change
+- `KernelException::throw(string $message): never` — static helper that always throws a `KernelException`
+- `KernelException::throwIf(bool $condition, string $message): void` — throws when `$condition` is `true`
+- `KernelException::throwIfNot(bool $condition, string $message): void` — throws when `$condition` is `false`
+- `Support\Env::get(string $name, mixed $default = null): mixed` — wraps `getenv()` with type coercion; coerces boolean variants (`true`/`false` and their `(true)`/`TRUE` forms), null variants, and JSON objects/arrays to native types; numeric strings are intentionally left as strings
+
+### Changed
+- Lifecycle hook callbacks (`onBooting`, `onBooted`, `onShutdown`, `afterShutdown`) are now stored in an internal `Hook\HookRepository` instead of directly on kernel properties; no public API change
+
+---
+
 ## [1.6.0] — 2026-06-03
 
 ### Added

@@ -30,17 +30,20 @@ $logger = $container->get('logger');
 
 ### Environments
 
-The `Environment` enum provides four application environments:
+The `Environment` enum provides five application environments:
 
 - `Environment::Production`
 - `Environment::Staging`
 - `Environment::Development`
 - `Environment::Testing`
+- `Environment::Local`
+
+`Local` is for local development machines. `Development` is the remote dev/integration tier.
 
 ```php
-$kernel = new Kernel(Environment::Development, debug: true);
+$kernel = new Kernel(Environment::Local, debug: true);
 
-$kernel->getEnvironment(); // 'development'
+$kernel->getEnvironment(); // 'local'
 $kernel->isDebug();        // true
 ```
 
@@ -241,6 +244,33 @@ public function config(Environment $env): array
 ```
 
 Config from multiple modules is merged in registration order. Later definitions overwrite earlier ones for the same key.
+
+`Env::get()` is available for reading environment variables with automatic type coercion — useful in `config()` implementations:
+
+```php
+use Georgeff\Kernel\Support\Env;
+
+public function config(Environment $env): array
+{
+    return [
+        'db.dsn'  => Env::get('DB_DSN', 'sqlite::memory:'),
+        'db.port' => Env::get('DB_PORT', '3306'),
+        'db.log'  => Env::get('DB_LOG', false),
+    ];
+}
+```
+
+Coercion rules:
+
+| Value | Result |
+|---|---|
+| `'true'`, `'TRUE'`, `'(true)'` | `true` |
+| `'false'`, `'FALSE'`, `'(false)'` | `false` |
+| `'null'`, `'NULL'`, `'(null)'` | `null` |
+| Valid JSON object or array | `array` |
+| Anything else | raw `string` |
+
+Numeric strings are intentionally left as strings — port numbers and similar values are most useful as strings.
 
 #### Module Boot
 
@@ -451,6 +481,25 @@ final class ConnectionPool implements DebuggableInterface
     }
 }
 ```
+
+### KernelException Helpers
+
+`KernelException` provides three static helpers for throwing from guard conditions without an inline `if`:
+
+```php
+use Georgeff\Kernel\KernelException;
+
+// Always throws
+KernelException::throw('Something went wrong');
+
+// Throws if $condition is true
+KernelException::throwIf($this->isBooted(), 'Kernel is already booted');
+
+// Throws if $condition is false
+KernelException::throwIfNot($this->isBooted(), 'Kernel has not been booted');
+```
+
+These are primarily useful when authoring custom kernel subclasses or modules that need guard conditions consistent with the kernel's own error type.
 
 ### Reserved Services
 
