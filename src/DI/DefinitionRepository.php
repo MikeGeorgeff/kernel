@@ -16,7 +16,7 @@ final class DefinitionRepository
     private array $definitions = [];
 
     /**
-     * @var array<string, array{factory: callable(ContainerInterface): mixed, innerId: string}>
+     * @var array<string, list<array{factory: callable(ContainerInterface): mixed, innerId: string}>>
      */
     private array $decorators = [];
 
@@ -35,28 +35,40 @@ final class DefinitionRepository
      */
     public function decorate(string $id, callable $decorator): void
     {
-        if (isset($this->decorators[$id])) {
-            throw new KernelException("Cannot apply a decorator to an already decorated definition ID: [{$id}]");
-        }
+        $index = $this->getInnerDecoratorIndex($id);
 
-        $innerServiceId = "_{$id}.inner";
+        $innerServiceId = "_{$id}.inner.{$index}";
 
         $factory = function (ContainerInterface $c) use ($innerServiceId, $decorator): mixed {
             return $decorator($c->get($innerServiceId), $c);
         };
 
-        $this->decorators[$id] = ['factory' => $factory, 'innerId' => $innerServiceId];
+        $this->decorators[$id][] = ['factory' => $factory, 'innerId' => $innerServiceId];
     }
 
-    private function applyDecorator(string $id): void
+    private function getInnerDecoratorIndex(string $id): int
+    {
+        return count($this->decorators[$id] ?? []);
+    }
+
+    private function applyDecoratorsForDefinition(string $id): void
     {
         if (null === ($inner = $this->get($id))) {
             throw new KernelException("Cannot decorate a non-existing definition ID: [{$id}]");
         }
 
-        $decorator = $this->decorators[$id];
+        $decorators   = $this->decorators[$id];
+        $outerFactory = $inner->getFactory();
 
-        $decorated = $this->add($id, $decorator['factory']);
+        foreach ($decorators as $i => $decorator) {
+            $innerFactory = 0 === $i ? $inner->getFactory() : $decorators[$i - 1]['factory'];
+
+            $this->add($decorator['innerId'], $innerFactory);
+
+            $outerFactory = $decorator['factory'];
+        }
+
+        $decorated = $this->add($id, $outerFactory);
 
         if ($inner->isShared()) {
             $decorated->share();
@@ -69,8 +81,6 @@ final class DefinitionRepository
         foreach ($inner->getTags() as $tag) {
             $decorated->tag($tag);
         }
-
-        $this->add($decorator['innerId'], $inner->getFactory());
     }
 
     /**
@@ -84,7 +94,7 @@ final class DefinitionRepository
     public function applyDecorators(): void
     {
         foreach (array_keys($this->decorators) as $id) {
-            $this->applyDecorator($id);
+            $this->applyDecoratorsForDefinition($id);
         }
     }
 

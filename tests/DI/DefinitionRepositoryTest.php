@@ -105,18 +105,6 @@ class DefinitionRepositoryTest extends TestCase
     // decorate()
     // -------------------------------------------------------------------------
 
-    public function test_decorate_throws_when_already_decorated(): void
-    {
-        $repository = new DefinitionRepository();
-        $repository->add('foo', fn() => 'bar');
-        $repository->decorate('foo', fn($inner, $c) => $inner);
-
-        $this->expectException(KernelException::class);
-        $this->expectExceptionMessage('Cannot apply a decorator to an already decorated definition ID: [foo]');
-
-        $repository->decorate('foo', fn($inner, $c) => $inner);
-    }
-
     public function test_decorate_does_not_immediately_modify_definitions(): void
     {
         $factory    = fn() => 'original';
@@ -158,7 +146,7 @@ class DefinitionRepositoryTest extends TestCase
         $repository->decorate('foo', fn($inner, $c) => $inner);
         $repository->applyDecorators();
 
-        $this->assertNotNull($repository->get('_foo.inner'));
+        $this->assertNotNull($repository->get('_foo.inner.0'));
     }
 
     public function test_apply_decorators_inner_has_original_factory(): void
@@ -169,7 +157,7 @@ class DefinitionRepositoryTest extends TestCase
         $repository->decorate('foo', fn($inner, $c) => $inner);
         $repository->applyDecorators();
 
-        $this->assertSame($factory, $repository->get('_foo.inner')?->getFactory());
+        $this->assertSame($factory, $repository->get('_foo.inner.0')?->getFactory());
     }
 
     public function test_apply_decorators_inner_has_no_aliases(): void
@@ -179,7 +167,7 @@ class DefinitionRepositoryTest extends TestCase
         $repository->decorate('foo', fn($inner, $c) => $inner);
         $repository->applyDecorators();
 
-        $this->assertSame([], $repository->get('_foo.inner')?->getAliases());
+        $this->assertSame([], $repository->get('_foo.inner.0')?->getAliases());
     }
 
     public function test_apply_decorators_inner_has_no_tags(): void
@@ -189,7 +177,7 @@ class DefinitionRepositoryTest extends TestCase
         $repository->decorate('foo', fn($inner, $c) => $inner);
         $repository->applyDecorators();
 
-        $this->assertSame([], $repository->get('_foo.inner')?->getTags());
+        $this->assertSame([], $repository->get('_foo.inner.0')?->getTags());
     }
 
     public function test_apply_decorators_outer_inherits_shared_from_original(): void
@@ -236,7 +224,7 @@ class DefinitionRepositoryTest extends TestCase
     {
         $inner     = new \stdClass();
         $container = $this->createMock(ContainerInterface::class);
-        $container->method('get')->with('_foo.inner')->willReturn($inner);
+        $container->method('get')->with('_foo.inner.0')->willReturn($inner);
 
         $received = [];
         $decorator = function ($i, $c) use (&$received) {
@@ -265,5 +253,23 @@ class DefinitionRepositoryTest extends TestCase
         $repository->applyDecorators();
 
         $this->assertSame($factory, $repository->get('bar')?->getFactory());
+    }
+
+    public function test_apply_decorators_chains_multiple_decorators_innermost_first(): void
+    {
+        $repository = new DefinitionRepository();
+        $repository->add('foo', fn() => 'original');
+        $repository->decorate('foo', fn($inner, $c) => $inner . '_A');
+        $repository->decorate('foo', fn($inner, $c) => $inner . '_B');
+        $repository->applyDecorators();
+
+        $container = $this->createMock(ContainerInterface::class);
+        $container->method('get')->willReturnCallback(
+            fn(string $id) => ($repository->get($id)?->getFactory())($container)
+        );
+
+        $result = ($repository->get('foo')?->getFactory())($container);
+
+        $this->assertSame('original_A_B', $result);
     }
 }

@@ -172,7 +172,7 @@ final class LoggingModule implements ModuleInterface
 }
 ```
 
-`decorate()` throws `KernelException` if called after boot, for a reserved service ID, or if the same ID is decorated more than once. A `KernelException` is also thrown at boot time if the target definition does not exist.
+`decorate()` throws `KernelException` if called after boot or for a reserved service ID. A `KernelException` is also thrown at boot time if the target definition does not exist.
 
 ### Modules
 

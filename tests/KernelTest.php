@@ -1277,17 +1277,6 @@ class KernelTest extends TestCase
         $kernel->decorate(KernelInterface::class, fn($inner, $c) => $inner);
     }
 
-    public function test_decorate_throws_when_already_decorated(): void
-    {
-        $kernel = new Kernel(Environment::Testing);
-        $kernel->addDefinition('my.service', fn() => new \stdClass());
-        $kernel->decorate('my.service', fn($inner, $c) => $inner);
-
-        $this->expectException(KernelException::class);
-
-        $kernel->decorate('my.service', fn($inner, $c) => $inner);
-    }
-
     public function test_decorate_throws_when_definition_does_not_exist(): void
     {
         $kernel = new Kernel(Environment::Testing);

@@ -4,6 +4,13 @@ All notable changes to `georgeff/kernel` are documented here.
 
 ---
 
+## [1.8.0] — 2026-06-18
+
+### Changed
+- `decorate()` now supports multiple decorators on the same service ID; the previously thrown `KernelException` on re-decoration has been removed; decorators are chained innermost-first (first registered wraps the original, each subsequent decorator wraps the previous result)
+
+---
+
 ## [1.7.0] — 2026-06-15
 
 ### Added
