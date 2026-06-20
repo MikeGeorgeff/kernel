@@ -4,6 +4,23 @@ All notable changes to `georgeff/kernel` are documented here.
 
 ---
 
+## [1.9.0] — 2026-06-19
+
+### Added
+- `ResolvingAwareServiceRegistrar` interface extending `ServiceRegistrar` with `afterResolved(callable $callback): void`; registrars that implement it receive a post-resolution hook from the kernel in debug mode
+- `DefaultServiceRegistrar` now implements `ResolvingAwareServiceRegistrar`; delegates to `georgeff/container`'s `afterResolved()` hook (requires `georgeff/container ^1.1`)
+
+### Changed
+- Debug resolution tracking no longer wraps the container in a `DebugContainer`; the kernel now registers an `afterResolved` hook via `ResolvingAwareServiceRegistrar` during the `containerInit` boot phase when debug mode is enabled; the `services` key in `getDebugInfo()` is only present when the registrar implements `ResolvingAwareServiceRegistrar`
+- `ServiceResolutionProfile` renamed to `ServiceResolution` (`@internal`); `resolve()` signature changed from `(string $id, float $resolutionTime)` to `(string $id, mixed $resolved)` — now stores the resolved instance rather than timing
+- `ResolvedService` (`@internal`) constructor now requires the resolved instance as a second argument; resolution time tracking (`addResolutionTime()`, `getResolutionTime()`) removed; `getDebugInfo()` now includes a `debugInfo` key when the resolved instance implements `DebuggableInterface`
+- `getDebugInfo()` key for service resolution data changed from `serviceResolutionProfile` to `services`
+
+### Removed
+- `DebugContainer` removed; replaced by the `ResolvingAwareServiceRegistrar` hook mechanism
+
+---
+
 ## [1.8.1] — 2026-06-19
 
 ### Changed

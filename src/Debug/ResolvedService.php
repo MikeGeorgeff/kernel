@@ -7,15 +7,16 @@ namespace Georgeff\Kernel\Debug;
  */
 final class ResolvedService implements DebuggableInterface
 {
-    private string $id;
+    private readonly string $id;
+
+    private readonly mixed $resolved;
 
     private int $resolutionCount = 0;
 
-    private float $resolutionTime = 0.0;
-
-    public function __construct(string $id)
+    public function __construct(string $id, mixed $resolved)
     {
-        $this->id = $id;
+        $this->id       = $id;
+        $this->resolved = $resolved;
     }
 
     public function getId(): string
@@ -28,11 +29,6 @@ final class ResolvedService implements DebuggableInterface
         return $this->resolutionCount;
     }
 
-    public function getResolutionTime(): float
-    {
-        return $this->resolutionTime;
-    }
-
     public function incrementResolutionCount(): self
     {
         $this->resolutionCount++;
@@ -40,23 +36,17 @@ final class ResolvedService implements DebuggableInterface
         return $this;
     }
 
-    public function addResolutionTime(float $duration): self
-    {
-        $this->resolutionTime += $duration;
-
-        return $this;
-    }
-
     /**
-     * @return array<string, array{'resolutionCount': int, 'totalResolutionTime': float}>
+     * @return array{resolutionCount: int, debugInfo?: array<mixed>}
      */
     public function getDebugInfo(): array
     {
-        return [
-            $this->id => [
-                'resolutionCount'     => $this->resolutionCount,
-                'totalResolutionTime' => $this->resolutionTime,
-            ],
-        ];
+        $info = ['resolutionCount' => $this->resolutionCount];
+
+        if ($this->resolved instanceof DebuggableInterface) {
+            $info['debugInfo'] = $this->resolved->getDebugInfo();
+        }
+
+        return $info;
     }
 }

@@ -10,35 +10,28 @@ class ResolvedServiceTest extends TestCase
 {
     public function test_it_implements_debuggable_interface(): void
     {
-        $service = new ResolvedService('foo');
+        $service = new ResolvedService('foo', new \stdClass());
 
         $this->assertInstanceOf(DebuggableInterface::class, $service);
     }
 
     public function test_it_returns_the_id(): void
     {
-        $service = new ResolvedService('foo');
+        $service = new ResolvedService('foo', new \stdClass());
 
         $this->assertSame('foo', $service->getId());
     }
 
     public function test_resolution_count_starts_at_zero(): void
     {
-        $service = new ResolvedService('foo');
+        $service = new ResolvedService('foo', new \stdClass());
 
         $this->assertSame(0, $service->getResolutionCount());
     }
 
-    public function test_resolution_time_starts_at_zero(): void
-    {
-        $service = new ResolvedService('foo');
-
-        $this->assertSame(0.0, $service->getResolutionTime());
-    }
-
     public function test_increment_resolution_count(): void
     {
-        $service = new ResolvedService('foo');
+        $service = new ResolvedService('foo', new \stdClass());
         $service->incrementResolutionCount();
 
         $this->assertSame(1, $service->getResolutionCount());
@@ -46,7 +39,7 @@ class ResolvedServiceTest extends TestCase
 
     public function test_increment_resolution_count_multiple_times(): void
     {
-        $service = new ResolvedService('foo');
+        $service = new ResolvedService('foo', new \stdClass());
         $service->incrementResolutionCount();
         $service->incrementResolutionCount();
         $service->incrementResolutionCount();
@@ -56,58 +49,58 @@ class ResolvedServiceTest extends TestCase
 
     public function test_increment_resolution_count_returns_self(): void
     {
-        $service = new ResolvedService('foo');
+        $service = new ResolvedService('foo', new \stdClass());
 
         $this->assertSame($service, $service->incrementResolutionCount());
     }
 
-    public function test_add_resolution_time(): void
+    public function test_get_debug_info_returns_resolution_count(): void
     {
-        $service = new ResolvedService('foo');
-        $service->addResolutionTime(1.5);
+        $service = new ResolvedService('foo', new \stdClass());
+        $service->incrementResolutionCount();
 
-        $this->assertSame(1.5, $service->getResolutionTime());
+        $info = $service->getDebugInfo();
+
+        $this->assertSame(1, $info['resolutionCount']);
     }
 
-    public function test_add_resolution_time_accumulates(): void
+    public function test_get_debug_info_includes_debug_info_for_debuggable_resolved(): void
     {
-        $service = new ResolvedService('foo');
-        $service->addResolutionTime(1.5);
-        $service->addResolutionTime(2.5);
+        $inner = new class implements DebuggableInterface {
+            public function getDebugInfo(): array { return ['custom' => 'info']; }
+        };
 
-        $this->assertSame(4.0, $service->getResolutionTime());
+        $service = new ResolvedService('foo', $inner);
+
+        $info = $service->getDebugInfo();
+
+        $this->assertArrayHasKey('debugInfo', $info);
+        $this->assertSame(['custom' => 'info'], $info['debugInfo']);
     }
 
-    public function test_add_resolution_time_returns_self(): void
+    public function test_get_debug_info_does_not_include_debug_info_for_non_debuggable_resolved(): void
     {
-        $service = new ResolvedService('foo');
+        $service = new ResolvedService('foo', new \stdClass());
 
-        $this->assertSame($service, $service->addResolutionTime(1.0));
+        $info = $service->getDebugInfo();
+
+        $this->assertArrayNotHasKey('debugInfo', $info);
     }
 
-    public function test_fluent_chaining(): void
+    public function test_debuggable_resolved_info_is_evaluated_lazily(): void
     {
-        $service = new ResolvedService('foo');
+        $inner = new class implements DebuggableInterface {
+            public int $count = 0;
 
-        $result = $service->incrementResolutionCount()
-                          ->addResolutionTime(1.0);
+            public function getDebugInfo(): array { return ['count' => $this->count]; }
+        };
 
-        $this->assertSame($service, $result);
-        $this->assertSame(1, $service->getResolutionCount());
-        $this->assertSame(1.0, $service->getResolutionTime());
-    }
+        $service = new ResolvedService('foo', $inner);
 
-    public function test_get_debug_info(): void
-    {
-        $service = new ResolvedService('foo');
-        $service->incrementResolutionCount()
-                ->addResolutionTime(0.5);
+        $inner->count = 5;
 
-        $this->assertSame([
-            'foo' => [
-                'resolutionCount'     => 1,
-                'totalResolutionTime' => 0.5,
-            ],
-        ], $service->getDebugInfo());
+        $info = $service->getDebugInfo();
+
+        $this->assertSame(['count' => 5], $info['debugInfo']);
     }
 }

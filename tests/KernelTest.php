@@ -545,6 +545,17 @@ class KernelTest extends TestCase
         $this->assertSame([], $kernel->getDebugInfo());
     }
 
+    public function test_get_debug_info_does_not_include_services_when_registrar_is_not_resolving_aware(): void
+    {
+        $registrar = $this->createMockRegistrar();
+        $registrar->method('getContainer')->willReturn($this->createMock(\Psr\Container\ContainerInterface::class));
+
+        $kernel = new Kernel(Environment::Testing, $registrar, debug: true);
+        $kernel->boot();
+
+        $this->assertArrayNotHasKey('services', $kernel->getDebugInfo());
+    }
+
     public function test_get_debug_info_returns_service_resolution_profile_in_debug_mode(): void
     {
         $kernel = new Kernel(Environment::Testing, debug: true);
@@ -553,9 +564,9 @@ class KernelTest extends TestCase
 
         $info = $kernel->getDebugInfo();
 
-        $this->assertArrayHasKey('serviceResolutionProfile', $info);
-        $this->assertArrayHasKey('resolved', $info['serviceResolutionProfile']);
-        $this->assertArrayHasKey('unresolved', $info['serviceResolutionProfile']);
+        $this->assertArrayHasKey('services', $info);
+        $this->assertArrayHasKey('resolved', $info['services']);
+        $this->assertArrayHasKey('unresolved', $info['services']);
     }
 
     public function test_get_debug_info_tracks_resolved_services(): void
@@ -568,7 +579,25 @@ class KernelTest extends TestCase
 
         $info = $kernel->getDebugInfo();
 
-        $this->assertArrayHasKey('foo', $info['serviceResolutionProfile']['resolved']);
+        $this->assertArrayHasKey('foo', $info['services']['resolved']);
+    }
+
+    public function test_get_debug_info_includes_debug_info_from_debuggable_resolved_service(): void
+    {
+        $service = new class implements \Georgeff\Kernel\Debug\DebuggableInterface {
+            public function getDebugInfo(): array { return ['custom' => 'data']; }
+        };
+
+        $kernel = new Kernel(Environment::Testing, debug: true);
+        $kernel->addDefinition('foo', fn() => $service, true);
+        $kernel->boot();
+
+        $kernel->getContainer()->get('foo');
+
+        $info = $kernel->getDebugInfo();
+
+        $this->assertArrayHasKey('debugInfo', $info['services']['resolved']['foo']);
+        $this->assertSame(['custom' => 'data'], $info['services']['resolved']['foo']['debugInfo']);
     }
 
     public function test_kernel_implements_debuggable_interface(): void
@@ -576,22 +605,6 @@ class KernelTest extends TestCase
         $kernel = new Kernel(Environment::Testing);
 
         $this->assertInstanceOf(\Georgeff\Kernel\Debug\DebuggableInterface::class, $kernel);
-    }
-
-    public function test_container_is_debug_container_in_debug_mode(): void
-    {
-        $kernel = new Kernel(Environment::Testing, debug: true);
-        $kernel->boot();
-
-        $this->assertInstanceOf(\Georgeff\Kernel\Debug\DebugContainer::class, $kernel->getContainer());
-    }
-
-    public function test_container_is_not_debug_container_when_not_debug(): void
-    {
-        $kernel = new Kernel(Environment::Testing);
-        $kernel->boot();
-
-        $this->assertNotInstanceOf(\Georgeff\Kernel\Debug\DebugContainer::class, $kernel->getContainer());
     }
 
     public function test_it_throws_when_adding_definition_with_reserved_environment_id(): void

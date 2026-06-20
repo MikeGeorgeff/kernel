@@ -438,16 +438,18 @@ If no `EventDispatcherInterface` is registered, boot completes without dispatchi
 
 ### Custom Service Registrar
 
-The kernel uses a `ServiceRegistrar` interface to register definitions with the container. A `DefaultServiceRegistrar` backed by `georgeff/container` is used by default. Provide your own to use a different container implementation:
+The kernel uses a `ServiceRegistrar` interface to register definitions with the container. `DefaultServiceRegistrar`, backed by `georgeff/container`, is used by default. Provide your own to use a different container implementation:
 
 ```php
 $registrar = new MyServiceRegistrar();
 $kernel = new Kernel(Environment::Production, $registrar);
 ```
 
+If the registrar also implements `ResolvingAwareServiceRegistrar`, the kernel registers a post-resolution hook in debug mode to track which services have been resolved and collect debug info from `DebuggableInterface` implementations. Custom registrars that do not implement it will function normally — debug resolution tracking simply will not be available.
+
 ### Debug Mode
 
-When debug mode is enabled, the kernel profiles the boot process, wraps the container in a `DebugContainer` that tracks service resolutions, and collects debug info from any resolved service implementing `DebuggableInterface`:
+When debug mode is enabled, the kernel profiles the boot process and tracks service resolutions. If the registrar implements `ResolvingAwareServiceRegistrar`, the kernel also collects debug info from any resolved service that implements `DebuggableInterface`:
 
 ```php
 $kernel = new Kernel(Environment::Development, debug: true);
@@ -461,14 +463,13 @@ The `getDebugInfo()` array contains:
 
 - `bootProfile` — timing for each boot phase (`preBoot`, `moduleLoad`, `moduleRegistration`, `serviceDecoration`, `serviceRegistration`, `containerInit`, `moduleBoot`)
 - `modules` — module loader state: which module classes were loaded and whether each phase has run
-- `serviceResolutionProfile` — which services were resolved and their resolution times
-- `servicesDebugInfo` — debug info collected from resolved services that implement `DebuggableInterface`
+- `services` — present only when the registrar implements `ResolvingAwareServiceRegistrar`; tracks which services have been resolved and which remain unresolved; each resolved entry includes a `resolutionCount` and, for services implementing `DebuggableInterface`, a `debugInfo` key containing the output of their `getDebugInfo()` method
 
 When debug is disabled, `getStartTime()` returns `-INF` and `getDebugInfo()` returns `[]`.
 
 #### DebuggableInterface
 
-Services can implement `DebuggableInterface` to expose debug data. When resolved through the debug container, their `getDebugInfo()` output is collected automatically:
+Services can implement `DebuggableInterface` to expose debug data. When the registrar implements `ResolvingAwareServiceRegistrar` and debug mode is enabled, their `getDebugInfo()` output is collected automatically after each factory resolution and included in the kernel's debug info under `services.resolved`:
 
 ```php
 use Georgeff\Kernel\Debug\DebuggableInterface;

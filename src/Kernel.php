@@ -14,6 +14,8 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
 
     protected ?Debug\Profiler $bootProfile = null;
 
+    private ?Debug\ServiceResolution $serviceResolution = null;
+
     private DI\DefinitionRepository $definitions;
 
     /**
@@ -166,11 +168,19 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
         });
 
         $this->profile('containerInit', function () {
-            $this->container = $this->registrar->getContainer();
+            if ($this->isDebug() && $this->registrar instanceof ResolvingAwareServiceRegistrar) {
+                $this->serviceResolution = new Debug\ServiceResolution($this->definitions->getRaw());
 
-            if (null !== $this->bootProfile) {
-                $this->container = new Debug\DebugContainer($this->container, $this->definitions->getRaw());
+                $this->registrar->afterResolved(
+                    function (string $id, mixed $resolved) {
+                        assert(null !== $this->serviceResolution);
+
+                        $this->serviceResolution->resolve($id, $resolved);
+                    }
+                );
             }
+
+            $this->container = $this->registrar->getContainer();
         });
 
         $this->profile('moduleBoot', function () {
@@ -437,8 +447,8 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
             $info['modules']     = $this->modules->getDebugInfo();
         }
 
-        if ($this->container instanceof Debug\DebuggableInterface) {
-            $info += $this->container->getDebugInfo();
+        if (null !== $this->serviceResolution) {
+            $info['services'] = $this->serviceResolution->getDebugInfo();
         }
 
         return $info;

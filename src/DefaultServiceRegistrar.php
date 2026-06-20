@@ -8,7 +8,7 @@ use Psr\Container\ContainerInterface;
 /**
  * @internal
  */
-final class DefaultServiceRegistrar implements ServiceRegistrar
+final class DefaultServiceRegistrar implements ResolvingAwareServiceRegistrar
 {
     private Container $container;
 
@@ -27,6 +27,14 @@ final class DefaultServiceRegistrar implements ServiceRegistrar
         foreach ($aliases as $alias) {
             $this->container->addAlias($id, $alias);
         }
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function afterResolved(callable $callback): void
+    {
+        $this->container->afterResolved($callback);
     }
 
     /**
