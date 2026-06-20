@@ -4,6 +4,9 @@ namespace Georgeff\Kernel\DI;
 
 use Psr\Container\ContainerInterface;
 
+/**
+ * @internal
+ */
 final class Definition implements DefinitionInterface
 {
     /**

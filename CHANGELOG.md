@@ -4,6 +4,13 @@ All notable changes to `georgeff/kernel` are documented here.
 
 ---
 
+## [1.8.1] — 2026-06-19
+
+### Changed
+- `DebugContainer`, `ResolvedService`, `ServiceResolutionProfile`, `Profiler`, `ModuleLoader`, `Definition`, and `DefaultServiceRegistrar` are now marked `@internal`; these classes have never been part of the public API and will be restructured in 1.9
+
+---
+
 ## [1.8.0] — 2026-06-18
 
 ### Changed

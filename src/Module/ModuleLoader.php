@@ -8,6 +8,9 @@ use Georgeff\Kernel\KernelInterface;
 use Psr\Container\ContainerInterface;
 use Georgeff\Kernel\Debug\DebuggableInterface;
 
+/**
+ * @internal
+ */
 final class ModuleLoader implements DebuggableInterface
 {
     /**

@@ -4,6 +4,9 @@ namespace Georgeff\Kernel\Debug;
 
 use Psr\Container\ContainerInterface;
 
+/**
+ * @internal
+ */
 final class DebugContainer implements ContainerInterface, DebuggableInterface
 {
     private ContainerInterface $container;

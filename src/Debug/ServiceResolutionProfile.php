@@ -2,6 +2,9 @@
 
 namespace Georgeff\Kernel\Debug;
 
+/**
+ * @internal
+ */
 final class ServiceResolutionProfile implements DebuggableInterface
 {
     /**

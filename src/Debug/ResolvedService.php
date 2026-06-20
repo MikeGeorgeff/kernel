@@ -2,6 +2,9 @@
 
 namespace Georgeff\Kernel\Debug;
 
+/**
+ * @internal
+ */
 final class ResolvedService implements DebuggableInterface
 {
     private string $id;

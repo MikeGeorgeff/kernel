@@ -5,6 +5,9 @@ namespace Georgeff\Kernel;
 use Georgeff\Container\Container;
 use Psr\Container\ContainerInterface;
 
+/**
+ * @internal
+ */
 final class DefaultServiceRegistrar implements ServiceRegistrar
 {
     private Container $container;
