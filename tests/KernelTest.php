@@ -1406,6 +1406,195 @@ class KernelTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
+    // override()
+    // -------------------------------------------------------------------------
+
+    public function test_override_returns_a_definition(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->addDefinition('my.service', fn() => 'original');
+
+        $definition = $kernel->override('my.service', fn() => 'overridden');
+
+        $this->assertInstanceOf(\Georgeff\Kernel\DI\DefinitionInterface::class, $definition);
+    }
+
+    public function test_override_throws_after_boot(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->boot();
+
+        $this->expectException(KernelException::class);
+        $this->expectExceptionMessage('Kernel has already been booted, cannot override service definitions');
+
+        $kernel->override('my.service', fn() => 'overridden');
+    }
+
+    public function test_override_throws_for_reserved_service(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+
+        $this->expectException(KernelException::class);
+        $this->expectExceptionMessage('Cannot overwrite a reserved service definition');
+
+        $kernel->override(KernelInterface::class, fn() => new \stdClass());
+    }
+
+    public function test_override_throws_when_definition_does_not_exist(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->override('missing.service', fn() => 'overridden');
+
+        $this->expectException(KernelException::class);
+        $this->expectExceptionMessage('Cannot override a non-existing definition');
+
+        $kernel->boot();
+    }
+
+    public function test_override_replaces_the_service(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->addDefinition('my.service', fn() => 'original');
+        $kernel->override('my.service', fn() => 'overridden');
+        $kernel->boot();
+
+        $this->assertSame('overridden', $kernel->getContainer()->get('my.service'));
+    }
+
+    public function test_override_wins_over_a_module_defining_the_same_service(): void
+    {
+        // Reproduces the Junction test-harness scenario: registering an override
+        // before boot() must still win even though the module registering the
+        // real service hasn't run yet at the point override() is called - the
+        // module's own define() call happens later, during moduleRegistration.
+        $module = new class implements ModuleInterface {
+            public function register(KernelInterface $kernel): void
+            {
+                $kernel->define('my.service', fn() => 'from module');
+            }
+        };
+
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->addModule($module);
+        $kernel->override('my.service', fn() => 'overridden');
+        $kernel->boot();
+
+        $this->assertSame('overridden', $kernel->getContainer()->get('my.service'));
+    }
+
+    public function test_override_does_not_inherit_shared_from_original(): void
+    {
+        $calls = 0;
+
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->addDefinition('my.service', fn() => 'original', true);
+        $kernel->override('my.service', function () use (&$calls) {
+            $calls++;
+            return 'overridden';
+        });
+        $kernel->boot();
+
+        $kernel->getContainer()->get('my.service');
+        $kernel->getContainer()->get('my.service');
+
+        $this->assertSame(2, $calls);
+    }
+
+    public function test_override_can_be_configured_as_shared_independently_of_original(): void
+    {
+        $calls = 0;
+
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->addDefinition('my.service', fn() => 'original');
+        $kernel->override('my.service', function () use (&$calls) {
+            $calls++;
+            return 'overridden';
+        })->share();
+        $kernel->boot();
+
+        $kernel->getContainer()->get('my.service');
+        $kernel->getContainer()->get('my.service');
+
+        $this->assertSame(1, $calls);
+    }
+
+    public function test_override_does_not_inherit_aliases_from_original(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->addDefinition('my.service', fn() => 'original', true, ['my.alias']);
+        $kernel->override('my.service', fn() => 'overridden');
+        $kernel->boot();
+
+        $this->expectException(\Georgeff\Container\DefinitionNotFoundException::class);
+
+        $kernel->getContainer()->get('my.alias');
+    }
+
+    public function test_override_does_not_inherit_tags_from_original(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->addDefinition('my.service', fn() => 'original', true, [], ['my.tag']);
+        $kernel->override('my.service', fn() => 'overridden');
+        $kernel->boot();
+
+        $tagged = $kernel->getContainer()->get(TagRegistryInterface::class)->getTagged('my.tag');
+
+        $this->assertCount(0, $tagged);
+    }
+
+    public function test_override_with_preserve_inherits_shared_aliases_and_tags(): void
+    {
+        // Mirrors overriding a real module-registered service (e.g. a queue) with a
+        // fake that should slot into the same shared/alias/tag identity as the
+        // original, without the caller having to already know what that identity is.
+        $calls = 0;
+
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->addDefinition('my.service', fn() => 'original', true, ['my.alias'], ['my.tag']);
+        $kernel->override('my.service', function () use (&$calls) {
+            $calls++;
+            return 'overridden';
+        }, preserve: true);
+        $kernel->boot();
+
+        $container = $kernel->getContainer();
+
+        $this->assertSame('overridden', $container->get('my.service'));
+        $this->assertSame('overridden', $container->get('my.alias'));
+
+        $container->get('my.service');
+
+        $this->assertSame(1, $calls);
+
+        $tagged = $container->get(TagRegistryInterface::class)->getTagged('my.tag');
+
+        $this->assertSame(['overridden'], $tagged);
+    }
+
+    public function test_module_can_override_service_from_another_module(): void
+    {
+        $definingModule = new class implements ModuleInterface {
+            public function register(KernelInterface $kernel): void
+            {
+                $kernel->addDefinition('my.service', fn() => 'from module');
+            }
+        };
+
+        $overridingModule = new class implements ModuleInterface {
+            public function register(KernelInterface $kernel): void
+            {
+                $kernel->override('my.service', fn() => 'overridden');
+            }
+        };
+
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->addModule($definingModule)->addModule($overridingModule);
+        $kernel->boot();
+
+        $this->assertSame('overridden', $kernel->getContainer()->get('my.service'));
+    }
+
+    // -------------------------------------------------------------------------
     // tag()
     // -------------------------------------------------------------------------
 

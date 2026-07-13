@@ -272,4 +272,175 @@ class DefinitionRepositoryTest extends TestCase
 
         $this->assertSame('original_A_B', $result);
     }
+
+    // -------------------------------------------------------------------------
+    // override()
+    // -------------------------------------------------------------------------
+
+    public function test_override_returns_a_definition(): void
+    {
+        $repository = new DefinitionRepository();
+        $repository->add('foo', fn() => 'original');
+
+        $definition = $repository->override('foo', fn() => 'overridden');
+
+        $this->assertInstanceOf(DefinitionInterface::class, $definition);
+    }
+
+    public function test_override_does_not_immediately_modify_definitions(): void
+    {
+        $factory    = fn() => 'original';
+        $repository = new DefinitionRepository();
+        $repository->add('foo', $factory);
+        $repository->override('foo', fn() => 'overridden');
+
+        $this->assertSame($factory, $repository->get('foo')?->getFactory());
+    }
+
+    // -------------------------------------------------------------------------
+    // applyOverrides()
+    // -------------------------------------------------------------------------
+
+    public function test_apply_overrides_is_a_noop_when_no_overrides_registered(): void
+    {
+        $repository = new DefinitionRepository();
+        $repository->add('foo', fn() => 'bar');
+        $repository->applyOverrides();
+
+        $this->assertCount(1, $repository->all());
+    }
+
+    public function test_apply_overrides_throws_when_definition_not_found(): void
+    {
+        $repository = new DefinitionRepository();
+        $repository->override('foo', fn() => 'overridden');
+
+        $this->expectException(KernelException::class);
+        $this->expectExceptionMessage('Cannot override a non-existing definition');
+
+        $repository->applyOverrides();
+    }
+
+    public function test_apply_overrides_replaces_the_definition(): void
+    {
+        $repository = new DefinitionRepository();
+        $repository->add('foo', fn() => 'original');
+        $repository->override('foo', fn() => 'overridden');
+        $repository->applyOverrides();
+
+        $this->assertSame('overridden', ($repository->get('foo')?->getFactory())());
+    }
+
+    public function test_apply_overrides_does_not_inherit_shared_from_original(): void
+    {
+        $repository = new DefinitionRepository();
+        $repository->add('foo', fn() => 'original')->share();
+        $repository->override('foo', fn() => 'overridden');
+        $repository->applyOverrides();
+
+        $this->assertFalse($repository->get('foo')?->isShared());
+    }
+
+    public function test_apply_overrides_honors_shared_when_explicitly_set(): void
+    {
+        $repository = new DefinitionRepository();
+        $repository->add('foo', fn() => 'original');
+        $repository->override('foo', fn() => 'overridden')->share();
+        $repository->applyOverrides();
+
+        $this->assertTrue($repository->get('foo')?->isShared());
+    }
+
+    public function test_apply_overrides_does_not_inherit_aliases_from_original(): void
+    {
+        $repository = new DefinitionRepository();
+        $repository->add('foo', fn() => 'original')->alias('foo_alias');
+        $repository->override('foo', fn() => 'overridden');
+        $repository->applyOverrides();
+
+        $this->assertSame([], $repository->get('foo')?->getAliases());
+    }
+
+    public function test_apply_overrides_does_not_inherit_tags_from_original(): void
+    {
+        $repository = new DefinitionRepository();
+        $repository->add('foo', fn() => 'original')->tag('my.tag');
+        $repository->override('foo', fn() => 'overridden');
+        $repository->applyOverrides();
+
+        $this->assertSame([], $repository->get('foo')?->getTags());
+    }
+
+    public function test_apply_overrides_with_preserve_inherits_shared_from_original(): void
+    {
+        $repository = new DefinitionRepository();
+        $repository->add('foo', fn() => 'original')->share();
+        $repository->override('foo', fn() => 'overridden', preserve: true);
+        $repository->applyOverrides();
+
+        $this->assertTrue($repository->get('foo')?->isShared());
+    }
+
+    public function test_apply_overrides_with_preserve_does_not_share_when_original_is_not(): void
+    {
+        $repository = new DefinitionRepository();
+        $repository->add('foo', fn() => 'original');
+        $repository->override('foo', fn() => 'overridden', preserve: true);
+        $repository->applyOverrides();
+
+        $this->assertFalse($repository->get('foo')?->isShared());
+    }
+
+    public function test_apply_overrides_with_preserve_inherits_aliases_from_original(): void
+    {
+        $repository = new DefinitionRepository();
+        $repository->add('foo', fn() => 'original')->alias('foo_alias');
+        $repository->override('foo', fn() => 'overridden', preserve: true);
+        $repository->applyOverrides();
+
+        $this->assertSame(['foo_alias'], $repository->get('foo')?->getAliases());
+    }
+
+    public function test_apply_overrides_with_preserve_inherits_tags_from_original(): void
+    {
+        $repository = new DefinitionRepository();
+        $repository->add('foo', fn() => 'original')->tag('my.tag');
+        $repository->override('foo', fn() => 'overridden', preserve: true);
+        $repository->applyOverrides();
+
+        $this->assertSame(['my.tag'], $repository->get('foo')?->getTags());
+    }
+
+    public function test_apply_overrides_with_preserve_still_uses_the_override_factory(): void
+    {
+        $repository = new DefinitionRepository();
+        $repository->add('foo', fn() => 'original');
+        $repository->override('foo', fn() => 'overridden', preserve: true);
+        $repository->applyOverrides();
+
+        $this->assertSame('overridden', ($repository->get('foo')?->getFactory())());
+    }
+
+    public function test_apply_overrides_does_not_affect_other_definitions(): void
+    {
+        $factory    = fn() => 'bar';
+        $repository = new DefinitionRepository();
+        $repository->add('foo', fn() => 'foo');
+        $repository->add('bar', $factory);
+        $repository->override('foo', fn() => 'overridden');
+        $repository->applyOverrides();
+
+        $this->assertSame($factory, $repository->get('bar')?->getFactory());
+    }
+
+    public function test_apply_overrides_last_override_wins(): void
+    {
+        $repository = new DefinitionRepository();
+        $repository->add('foo', fn() => 'original');
+        $repository->override('foo', fn() => 'first override');
+        $repository->override('foo', fn() => 'second override');
+        $repository->applyOverrides();
+
+        $this->assertSame('second override', ($repository->get('foo')?->getFactory())());
+    }
 }

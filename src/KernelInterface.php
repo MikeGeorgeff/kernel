@@ -138,6 +138,16 @@ interface KernelInterface
     public function decorate(string $id, callable $decorator): static;
 
     /**
+     * Override an existing service definition
+     *
+     * @param string                              $id
+     * @param callable(ContainerInterface): mixed $factory
+     *
+     * @return DefinitionInterface
+     */
+    public function override(string $id, callable $factory, bool $preserve = false): DefinitionInterface;
+
+    /**
      * Add a module to the kernel
      *
      * @param \Georgeff\Kernel\Module\ModuleInterface $module

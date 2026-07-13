@@ -20,6 +20,11 @@ final class DefinitionRepository
      */
     private array $decorators = [];
 
+    /**
+     * @var array<string, array{definition: DefinitionInterface, preserve: bool}>
+     */
+    private array $overrides = [];
+
     public function add(string $id, callable $factory): DefinitionInterface
     {
         return $this->definitions[$id] = Definition::for($id, $factory);
@@ -44,6 +49,15 @@ final class DefinitionRepository
         };
 
         $this->decorators[$id][] = ['factory' => $factory, 'innerId' => $innerServiceId];
+    }
+
+    public function override(string $id, callable $factory, bool $preserve = false): DefinitionInterface
+    {
+        $definition = Definition::for($id, $factory);
+
+        $this->overrides[$id] = ['definition' => $definition, 'preserve' => $preserve];
+
+        return $definition;
     }
 
     private function getInnerDecoratorIndex(string $id): int
@@ -95,6 +109,33 @@ final class DefinitionRepository
     {
         foreach (array_keys($this->decorators) as $id) {
             $this->applyDecoratorsForDefinition($id);
+        }
+    }
+
+    public function applyOverrides(): void
+    {
+        foreach ($this->overrides as $id => $data) {
+            $original = $this->get($id);
+
+            KernelException::throwIf(null === $original, 'Cannot override a non-existing definition');
+
+            if ($data['preserve']) {
+                assert(null !== $original);
+
+                if ($original->isShared()) {
+                    $data['definition']->share();
+                }
+
+                foreach ($original->getAliases() as $alias) {
+                    $data['definition']->alias($alias);
+                }
+
+                foreach ($original->getTags() as $tag) {
+                    $data['definition']->tag($tag);
+                }
+            }
+
+            $this->definitions[$id] = $data['definition'];
         }
     }
 

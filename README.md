@@ -174,6 +174,47 @@ final class LoggingModule implements ModuleInterface
 
 `decorate()` throws `KernelException` if called after boot or for a reserved service ID. A `KernelException` is also thrown at boot time if the target definition does not exist.
 
+### Service Overrides
+
+`override()` replaces an existing service definition outright — unlike `decorate()`, which wraps the original, `override()` swaps it for a completely different implementation. This is the tool for substituting fakes or test doubles for real services, especially ones registered by a module:
+
+```php
+$kernel->addDefinition(QueueInterface::class, fn() => new RabbitMQQueue($config), shared: true);
+
+$kernel->override(QueueInterface::class, fn() => new InMemoryQueue());
+
+$kernel->boot();
+
+$queue = $kernel->getContainer()->get(QueueInterface::class);
+// InMemoryQueue
+```
+
+Because the override is applied in its own boot phase — after all modules have registered but before decoration and container registration — it always wins, even when it targets a service a module hasn't registered yet at the point `override()` is called:
+
+```php
+$kernel->override(QueueInterface::class, fn() => new InMemoryQueue());
+
+$kernel->addModule(new QueueModule()); // registers the real QueueInterface
+
+$kernel->boot();
+// InMemoryQueue wins - the override is applied after QueueModule::register() runs
+```
+
+Unlike `decorate()`, `override()` does not inherit the original definition's shared flag, aliases, or tags by default — the replacement may have entirely different requirements than what it's replacing (a real queue implementation might not need to be shared; an in-memory test double usually does, to accumulate state across resolutions within a request). Configure the replacement explicitly via the returned `DefinitionInterface`:
+
+```php
+$kernel->override(QueueInterface::class, fn() => new InMemoryQueue())->share();
+```
+
+Pass `preserve: true` to copy the original's shared flag, aliases, and tags onto the override instead — useful when swapping an implementation without wanting to also redeclare everything else about it:
+
+```php
+$kernel->override(QueueInterface::class, fn() => new InMemoryQueue(), preserve: true);
+// InMemoryQueue is shared, aliased, and tagged exactly like the original QueueInterface registration
+```
+
+`override()` throws `KernelException` if called after boot or for a reserved service ID. A `KernelException` is also thrown at boot time if the target definition does not exist — `override()` can only replace something, not create it.
+
 ### Modules
 
 Modules are self-contained units that contribute service definitions, configuration, and boot logic to the kernel. They replace ad-hoc `addDefinition()` calls with composable, reusable pieces.
@@ -349,10 +390,11 @@ When `boot()` is called, modules are processed in this order:
 1. `onBooting` callbacks
 2. **Module load** — repositories are flattened into the module list; `config()` is called on all `ConfigurableModuleInterface` modules and the result is bound as `kernel.config`
 3. **Module registration** — `register()` is called on all modules
-4. **Service decoration** — pending decorators are applied after all modules have registered
-5. Container initialization
-6. **Module boot** — `boot()` is called on all `BootableModuleInterface` modules
-7. `KernelBooted` event dispatched + `onBooted` callbacks
+4. **Service overrides** — pending overrides are applied after all modules have registered
+5. **Service decoration** — pending decorators are applied after overrides
+6. Container initialization
+7. **Module boot** — `boot()` is called on all `BootableModuleInterface` modules
+8. `KernelBooted` event dispatched + `onBooted` callbacks
 
 ### Lifecycle Callbacks
 
@@ -512,7 +554,7 @@ The kernel registers the following services in the container during boot:
 - `kernel.config` — the merged config array from all `ConfigurableModuleInterface` modules (`[]` if none)
 - `kernel.tag.registry` (aliased to `TagRegistryInterface`) — the tag registry
 
-These IDs cannot be overwritten via `addDefinition`. The `kernel.*` namespace is reserved for the kernel — any service ID with that prefix should be considered owned by the package and subject to change between minor versions.
+These IDs cannot be overwritten via `addDefinition`, `decorate`, or `override`. The `kernel.*` namespace is reserved for the kernel — any service ID with that prefix should be considered owned by the package and subject to change between minor versions.
 
 ### Extending the Kernel
 

@@ -4,6 +4,13 @@ All notable changes to `georgeff/kernel` are documented here.
 
 ---
 
+## [1.10.0] — 2026-07-13
+
+### Added
+- `override(string $id, callable $factory, bool $preserve = false): DefinitionInterface` — replaces an existing service definition outright. Applied in a dedicated `serviceOverrides` boot phase that runs after all modules have registered but before decoration, so an override always wins even when registered before the module defining the same service. Throws `KernelException` if called after boot, for a reserved service ID, or (at boot time) if the target definition does not exist. Unlike `decorate()`, does not inherit the original definition's shared flag, aliases, or tags by default; pass `preserve: true` to copy them onto the override.
+
+---
+
 ## [1.9.0] — 2026-06-19
 
 ### Added

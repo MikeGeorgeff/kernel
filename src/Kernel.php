@@ -144,6 +144,10 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
             $this->modules->register($this);
         });
 
+        $this->profile('serviceOverrides', function () {
+            $this->definitions->applyOverrides();
+        });
+
         $this->profile('serviceDecoration', function () {
             $this->definitions->applyDecorators();
         });
@@ -381,6 +385,17 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
         $this->definitions->decorate($id, $decorator);
 
         return $this;
+    }
+
+    public function override(string $id, callable $factory, bool $preserve = false): DefinitionInterface
+    {
+        KernelException::throwIf($this->isBooted(), 'Kernel has already been booted, cannot override service definitions');
+
+        if (in_array($id, $this->reservedServices, true)) {
+            KernelException::throw('Cannot overwrite a reserved service definition');
+        }
+
+        return $this->definitions->override($id, $factory, $preserve);
     }
 
     /**
