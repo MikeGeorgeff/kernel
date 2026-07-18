@@ -85,6 +85,15 @@ class DefinitionTest extends TestCase
         $this->assertSame($definition, $definition->alias('baz'));
     }
 
+    public function test_alias_dedupes_repeated_alias(): void
+    {
+        $definition = Definition::for('foo', fn() => 'bar');
+
+        $definition->alias('baz')->alias('baz');
+
+        $this->assertSame(['baz'], $definition->getAliases());
+    }
+
     public function test_it_has_no_tags_by_default(): void
     {
         $definition = Definition::for('foo', fn() => 'bar');
@@ -115,6 +124,15 @@ class DefinitionTest extends TestCase
         $definition = Definition::for('foo', fn() => 'bar');
 
         $this->assertSame($definition, $definition->tag('my_tag'));
+    }
+
+    public function test_tag_dedupes_repeated_tag(): void
+    {
+        $definition = Definition::for('foo', fn() => 'bar');
+
+        $definition->tag('my_tag')->tag('my_tag');
+
+        $this->assertSame(['my_tag'], $definition->getTags());
     }
 
     public function test_fluent_chain(): void

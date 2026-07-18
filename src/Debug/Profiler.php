@@ -71,7 +71,7 @@ final class Profiler implements DebuggableInterface
      */
     public function getOverallDuration(): float
     {
-        if (!$this->start || !$this->end) {
+        if (null === $this->start || null === $this->end) {
             return -INF;
         }
 

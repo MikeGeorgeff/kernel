@@ -4,6 +4,16 @@ All notable changes to `georgeff/kernel` are documented here.
 
 ---
 
+## [1.10.1] — 2026-07-18
+
+### Fixed
+- `Definition::alias()` / `Definition::tag()` — repeated identical calls no longer accumulate duplicate entries in `getAliases()`/`getTags()`; deduped at the source instead of relying on incidental protection elsewhere (the now-redundant duplicate guard in `Kernel::boot()`'s tag registration was removed alongside this)
+- `Profiler::getOverallDuration()` — replaced a loose falsy check (`!$this->start`/`!$this->end`) with an explicit `null` check; the old check could misread a legitimate `0.0` timestamp as unset
+- `Kernel::boot()` — now throws `KernelException` if called reentrantly while already booting, matching the guard `addModule()`/`addRepository()` already had. Previously, a module calling `$kernel->boot()` from its own `register()` would recurse into `ModuleLoader::register()` uncontrolled instead of failing fast
+- `Kernel::profile()` — boot phase timing now wrapped in `try`/`finally`, so a phase's end time is always recorded even if its callback throws; previously an exception mid-phase (e.g. a module's `register()` failing) left that phase's duration permanently unrecorded (`null` in `getDebugInfo()`), including in the failure case where that data is most useful for diagnosis
+
+---
+
 ## [1.10.0] — 2026-07-13
 
 ### Added

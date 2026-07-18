@@ -48,14 +48,18 @@ final class Definition implements DefinitionInterface
 
     public function alias(string $alias): static
     {
-        $this->aliases[] = $alias;
+        if (!in_array($alias, $this->aliases, true)) {
+            $this->aliases[] = $alias;
+        }
 
         return $this;
     }
 
     public function tag(string $tag): static
     {
-        $this->tags[] = $tag;
+        if (!in_array($tag, $this->tags, true)) {
+            $this->tags[] = $tag;
+        }
 
         return $this;
     }

@@ -84,6 +84,25 @@ class KernelTest extends TestCase
         $this->assertTrue($kernel->isBooted());
     }
 
+    public function test_boot_throws_when_called_reentrantly_during_boot(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+
+        $module = new class implements ModuleInterface {
+            public function register(KernelInterface $kernel): void
+            {
+                $kernel->boot();
+            }
+        };
+
+        $kernel->addModule($module);
+
+        $this->expectException(KernelException::class);
+        $this->expectExceptionMessage('Kernel is booting, cannot call boot again');
+
+        $kernel->boot();
+    }
+
     public function test_it_returns_the_container_after_boot(): void
     {
         $kernel = new Kernel(Environment::Testing);
@@ -536,6 +555,28 @@ class KernelTest extends TestCase
         $this->assertArrayHasKey('serviceDecoration', $info['bootProfile']['phases']);
         $this->assertArrayHasKey('serviceRegistration', $info['bootProfile']['phases']);
         $this->assertArrayHasKey('containerInit', $info['bootProfile']['phases']);
+    }
+
+    public function test_profile_phase_is_stopped_even_when_callback_throws(): void
+    {
+        $module = new class implements ModuleInterface {
+            public function register(KernelInterface $kernel): void
+            {
+                throw new \RuntimeException('boom');
+            }
+        };
+
+        $kernel = new Kernel(Environment::Testing, debug: true);
+        $kernel->addModule($module);
+
+        try {
+            $kernel->boot();
+        } catch (\RuntimeException) {
+        }
+
+        $duration = $kernel->getDebugInfo()['bootProfile']['phases']['moduleRegistration']['duration'];
+
+        $this->assertIsFloat($duration);
     }
 
     public function test_get_debug_info_returns_empty_array_before_boot(): void

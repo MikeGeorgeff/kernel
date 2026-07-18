@@ -89,9 +89,11 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
     {
         $this->bootProfile?->startPhase($phase);
 
-        $fn();
-
-        $this->bootProfile?->stopPhase($phase);
+        try {
+            $fn();
+        } finally {
+            $this->bootProfile?->stopPhase($phase);
+        }
     }
 
     private function registerDefaultDefinitions(): void
@@ -123,6 +125,8 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
         if ($this->isBooted()) {
             return;
         }
+
+        KernelException::throwIf($this->isBooting(), 'Kernel is booting, cannot call boot again');
 
         $this->initProfiler();
 
@@ -164,9 +168,7 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
                 $this->registrar->register($id, $definition->getFactory(), $definition->isShared(), $aliases);
 
                 foreach ($definition->getTags() as $tag) {
-                    if (!in_array($id, $this->tags[$tag] ?? [], true)) {
-                        $this->tags[$tag][] = $id;
-                    }
+                    $this->tags[$tag][] = $id;
                 }
             }
         });
