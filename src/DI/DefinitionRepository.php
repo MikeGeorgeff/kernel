@@ -25,6 +25,16 @@ final class DefinitionRepository
      */
     private array $overrides = [];
 
+    /**
+     * Garbage collect
+     */
+    public function gc(): void
+    {
+        $this->definitions = [];
+        $this->decorators  = [];
+        $this->overrides   = [];
+    }
+
     public function add(string $id, callable $factory): DefinitionInterface
     {
         return $this->definitions[$id] = Definition::for($id, $factory);

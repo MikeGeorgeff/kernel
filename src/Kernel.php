@@ -184,6 +184,10 @@ class Kernel implements KernelInterface
             }
         });
 
+        $this->profile('garbageCollection', function () {
+            $this->definitions->gc();
+        });
+
         $this->bootProfile?->stop();
     }
 

@@ -443,4 +443,71 @@ class DefinitionRepositoryTest extends TestCase
 
         $this->assertSame('second override', ($repository->get('foo')?->getFactory())());
     }
+
+    // -------------------------------------------------------------------------
+    // gc()
+    // -------------------------------------------------------------------------
+
+    public function test_gc_is_a_noop_on_an_empty_repository(): void
+    {
+        $repository = new DefinitionRepository();
+        $repository->gc();
+
+        $this->assertSame([], $repository->all());
+    }
+
+    public function test_gc_clears_all_definitions(): void
+    {
+        $repository = new DefinitionRepository();
+        $repository->add('foo', fn() => 'bar');
+        $repository->gc();
+
+        $this->assertSame([], $repository->all());
+    }
+
+    public function test_gc_causes_get_to_return_null_for_a_previously_added_definition(): void
+    {
+        $repository = new DefinitionRepository();
+        $repository->add('foo', fn() => 'bar');
+        $repository->gc();
+
+        $this->assertNull($repository->get('foo'));
+    }
+
+    public function test_gc_clears_pending_decorators(): void
+    {
+        $repository = new DefinitionRepository();
+        $repository->add('foo', fn() => 'original');
+        $repository->decorate('foo', fn($inner, $c) => $inner);
+        $repository->gc();
+
+        // Definition is gone too, so this would throw if the decorator survived gc().
+        $repository->applyDecorators();
+
+        $this->assertSame([], $repository->all());
+    }
+
+    public function test_gc_clears_pending_overrides(): void
+    {
+        $repository = new DefinitionRepository();
+        $repository->add('foo', fn() => 'original');
+        $repository->override('foo', fn() => 'overridden');
+        $repository->gc();
+
+        // Definition is gone too, so this would throw if the override survived gc().
+        $repository->applyOverrides();
+
+        $this->assertSame([], $repository->all());
+    }
+
+    public function test_repository_is_reusable_after_gc(): void
+    {
+        $repository = new DefinitionRepository();
+        $repository->add('foo', fn() => 'original');
+        $repository->gc();
+
+        $repository->add('bar', fn() => 'baz');
+
+        $this->assertSame(['bar' => $repository->get('bar')], $repository->all());
+    }
 }
