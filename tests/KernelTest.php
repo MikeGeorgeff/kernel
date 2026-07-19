@@ -1624,6 +1624,100 @@ class KernelTest extends TestCase
         $this->assertSame([], $tagged);
     }
 
+    // -------------------------------------------------------------------------
+    // resetServices()
+    // -------------------------------------------------------------------------
+
+    public function test_reset_services_returns_the_kernel(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->boot();
+
+        $result = $kernel->resetServices();
+
+        $this->assertSame($kernel, $result);
+    }
+
+    public function test_reset_services_throws_before_boot(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+
+        $this->expectException(KernelException::class);
+        $this->expectExceptionMessage('Kernel has not been booted, cannot reset shared services');
+
+        $kernel->resetServices();
+    }
+
+    public function test_reset_services_resets_a_resolved_shared_resettable_service(): void
+    {
+        $service = new class implements \Georgeff\Kernel\Contract\ResettableInterface {
+            public int $count = 0;
+            public function reset(): void { $this->count = 0; }
+        };
+
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->define('my.service', fn() => $service)->share();
+        $kernel->boot();
+
+        $resolved = $kernel->getContainer()->get('my.service');
+        $resolved->count = 5;
+
+        $kernel->resetServices();
+
+        $this->assertSame(0, $resolved->count);
+    }
+
+    public function test_reset_services_does_not_reset_a_service_that_was_never_resolved(): void
+    {
+        $service = new class implements \Georgeff\Kernel\Contract\ResettableInterface {
+            public int $count = 5;
+            public function reset(): void { $this->count = 0; }
+        };
+
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->define('my.service', fn() => $service)->share();
+        $kernel->boot();
+
+        // Never resolved via $kernel->getContainer()->get('my.service')
+        $kernel->resetServices();
+
+        $this->assertSame(5, $service->count);
+    }
+
+    public function test_reset_services_does_not_reset_a_non_shared_resettable_service(): void
+    {
+        $service = new class implements \Georgeff\Kernel\Contract\ResettableInterface {
+            public int $count = 0;
+            public function reset(): void { $this->count = 0; }
+        };
+
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->define('my.service', fn() => $service);
+        $kernel->boot();
+
+        $resolved = $kernel->getContainer()->get('my.service');
+        $resolved->count = 5;
+
+        $kernel->resetServices();
+
+        $this->assertSame(5, $resolved->count);
+    }
+
+    public function test_reset_services_does_not_reset_a_non_resettable_service(): void
+    {
+        $service = new \stdClass();
+        $service->count = 5;
+
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->define('my.service', fn() => $service)->share();
+        $kernel->boot();
+
+        $kernel->getContainer()->get('my.service');
+        $kernel->resetServices();
+
+        $this->assertSame(5, $service->count);
+    }
+
     private function createContainerBuilderMock(): ContainerBuilderInterface&\PHPUnit\Framework\MockObject\MockObject
     {
         return $this->createMock(ContainerBuilderInterface::class);

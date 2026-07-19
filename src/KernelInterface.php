@@ -162,6 +162,13 @@ interface KernelInterface extends Debug\DebuggableInterface
     public function override(string $id, callable $factory, bool $preserve = false): DefinitionInterface;
 
     /**
+     * Reset resolved shared services to their original state
+     *
+     * @return static
+     */
+    public function resetServices(): static;
+
+    /**
      * Add a module to the kernel
      *
      * @param \Georgeff\Kernel\Module\ModuleInterface $module

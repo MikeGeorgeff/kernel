@@ -25,9 +25,9 @@ class Kernel implements KernelInterface
 
     private Hook\HookRepository $hooks;
 
-    private ?ContainerInterface $container = null;
+    private DI\ServiceResetter $resetter;
 
-    protected readonly Storage\Cache $cache;
+    private ?ContainerInterface $container = null;
 
     private Environment $environment;
 
@@ -50,7 +50,7 @@ class Kernel implements KernelInterface
         $this->modules     = new Module\ModuleLoader();
         $this->definitions = new DI\DefinitionRepository();
         $this->hooks       = new Hook\HookRepository();
-        $this->cache       = new Storage\Cache();
+        $this->resetter    = new DI\ServiceResetter();
     }
 
     private function initProfiler(): void
@@ -115,10 +115,9 @@ class Kernel implements KernelInterface
             $tags = [];
 
             foreach ($this->definitions->all() as $definition) {
-                $id      = $definition->getId();
-                $aliases = $definition->getAliases();
+                $id = $definition->getId();
 
-                $this->builder->register($id, $definition->getFactory(), $definition->isShared(), $aliases);
+                $this->builder->register($id, $definition->getFactory(), $definition->isShared(), $definition->getAliases());
 
                 foreach ($definition->getTags() as $tag) {
                     $tags[$tag][] = $id;
@@ -150,6 +149,12 @@ class Kernel implements KernelInterface
                     }
                 );
             }
+
+            $this->builder->onResolved(function (string $id, mixed $resolved) {
+                if ($resolved instanceof Contract\ResettableInterface && $this->definitions->get($id)?->isShared()) {
+                    $this->resetter->add($id, $resolved);
+                }
+            });
 
             $this->container = $this->builder->getContainer();
         });
@@ -324,6 +329,15 @@ class Kernel implements KernelInterface
         KernelException::throwIf($this->isBooted(), 'Kernel has already been booted, cannot override service definitions');
 
         return $this->definitions->override($id, $factory, $preserve);
+    }
+
+    public function resetServices(): static
+    {
+        KernelException::throwIfNot($this->isBooted(), 'Kernel has not been booted, cannot reset shared services');
+
+        $this->resetter->reset();
+
+        return $this;
     }
 
     public function addModule(ModuleInterface $module): static
