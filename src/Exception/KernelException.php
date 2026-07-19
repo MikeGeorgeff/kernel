@@ -2,9 +2,7 @@
 
 namespace Georgeff\Kernel\Exception;
 
-use RuntimeException;
-
-final class KernelException extends RuntimeException
+final class KernelException extends \RuntimeException implements KernelExceptionInterface
 {
     public static function throw(string $message): never
     {

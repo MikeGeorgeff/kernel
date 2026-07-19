@@ -6,6 +6,7 @@ use Psr\Container\ContainerInterface;
 use Georgeff\Kernel\Module\ModuleInterface;
 use Georgeff\Kernel\DI\DefinitionInterface;
 use Georgeff\Kernel\Module\ModuleRepositoryInterface;
+use Georgeff\Kernel\Exception\KernelExceptionInterface;
 
 interface KernelInterface extends Debug\DebuggableInterface
 {
@@ -64,6 +65,8 @@ interface KernelInterface extends Debug\DebuggableInterface
      * @param callable(KernelInterface): void $callback
      *
      * @return static
+     *
+     * @throws KernelExceptionInterface
      */
     public function onBooting(callable $callback): static;
 
@@ -73,6 +76,8 @@ interface KernelInterface extends Debug\DebuggableInterface
      * @param callable(KernelInterface): void $callback
      *
      * @return static
+     *
+     * @throws KernelExceptionInterface
      */
     public function onBooted(callable $callback): static;
 
@@ -82,6 +87,8 @@ interface KernelInterface extends Debug\DebuggableInterface
      * @param callable(KernelInterface): void $callback
      *
      * @return static
+     *
+     * @throws KernelExceptionInterface
      */
     public function onShutdown(callable $callback): static;
 
@@ -91,6 +98,8 @@ interface KernelInterface extends Debug\DebuggableInterface
      * @param callable(KernelInterface): void $callback
      *
      * @return static
+     *
+     * @throws KernelExceptionInterface
      */
     public function afterShutdown(callable $callback): static;
 
@@ -100,6 +109,8 @@ interface KernelInterface extends Debug\DebuggableInterface
      * @param callable(string): void $callback
      *
      * @return static
+     *
+     * @throws KernelExceptionInterface
      */
     public function onResolving(callable $callback): static;
 
@@ -109,6 +120,8 @@ interface KernelInterface extends Debug\DebuggableInterface
      * @param callable(string, mixed): void $callback
      *
      * @return static
+     *
+     * @throws KernelExceptionInterface
      */
     public function onResolved(callable $callback): static;
 
@@ -119,6 +132,8 @@ interface KernelInterface extends Debug\DebuggableInterface
      * @param callable(ContainerInterface): mixed $factory
      *
      * @return DefinitionInterface
+     *
+     * @throws KernelExceptionInterface
      */
     public function define(string $id, callable $factory): DefinitionInterface;
 
@@ -129,6 +144,8 @@ interface KernelInterface extends Debug\DebuggableInterface
      * @param callable(mixed, ContainerInterface): mixed $decorator
      *
      * @return static
+     *
+     * @throws KernelExceptionInterface
      */
     public function decorate(string $id, callable $decorator): static;
 
@@ -139,6 +156,8 @@ interface KernelInterface extends Debug\DebuggableInterface
      * @param callable(ContainerInterface): mixed $factory
      *
      * @return DefinitionInterface
+     *
+     * @throws KernelExceptionInterface
      */
     public function override(string $id, callable $factory, bool $preserve = false): DefinitionInterface;
 
@@ -148,6 +167,8 @@ interface KernelInterface extends Debug\DebuggableInterface
      * @param \Georgeff\Kernel\Module\ModuleInterface $module
      *
      * @return static
+     *
+     * @throws KernelExceptionInterface
      */
     public function addModule(ModuleInterface $module): static;
 
@@ -157,6 +178,8 @@ interface KernelInterface extends Debug\DebuggableInterface
      * @param \Georgeff\Kernel\Module\ModuleRepositoryInterface $repository
      *
      * @return static
+     *
+     * @throws KernelExceptionInterface
      */
     public function addRepository(ModuleRepositoryInterface $repository): static;
 
@@ -164,6 +187,8 @@ interface KernelInterface extends Debug\DebuggableInterface
      * Get the container
      *
      * @return \Psr\Container\ContainerInterface
+     *
+     * @throws KernelExceptionInterface
      */
     public function getContainer(): ContainerInterface;
 
