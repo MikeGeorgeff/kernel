@@ -27,6 +27,8 @@ class Kernel implements KernelInterface
 
     private ?ContainerInterface $container = null;
 
+    protected readonly Storage\Cache $cache;
+
     private Environment $environment;
 
     private bool $debug;
@@ -48,6 +50,7 @@ class Kernel implements KernelInterface
         $this->modules     = new Module\ModuleLoader();
         $this->definitions = new DI\DefinitionRepository();
         $this->hooks       = new Hook\HookRepository();
+        $this->cache       = new Storage\Cache();
     }
 
     private function initProfiler(): void
