@@ -1,6 +1,8 @@
 <?php
 
-namespace Georgeff\Kernel;
+namespace Georgeff\Kernel\Contract;
+
+use Georgeff\Kernel\KernelInterface;
 
 interface RunnableKernelInterface extends KernelInterface
 {

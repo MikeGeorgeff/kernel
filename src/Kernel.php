@@ -5,10 +5,10 @@ namespace Georgeff\Kernel;
 use Psr\Container\ContainerInterface;
 use Georgeff\Kernel\DI\DefinitionInterface;
 use Georgeff\Kernel\Module\ModuleInterface;
-use Psr\EventDispatcher\EventDispatcherInterface;
 use Georgeff\Kernel\Module\ModuleRepositoryInterface;
+use Georgeff\Kernel\Contract\ContainerBuilderInterface;
 
-class Kernel implements KernelInterface, Debug\DebuggableInterface
+class Kernel implements KernelInterface
 {
     protected ?float $startTime = null;
 
@@ -16,34 +16,21 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
 
     private ?Debug\ServiceResolution $serviceResolution = null;
 
+    private Contract\ContainerBuilderInterface $builder;
+
     private DI\DefinitionRepository $definitions;
-
-    /**
-     * @var array<string, string[]>
-     */
-    private array $tags = [];
-
-    /**
-     * @var string[]
-     */
-    private array $reservedServices = [];
 
     private Module\ModuleLoader $modules;
 
-    private ServiceRegistrar $registrar;
-
     private Hook\HookRepository $hooks;
 
-    protected ?ContainerInterface $container = null;
+    private ?ContainerInterface $container = null;
 
-    protected Environment $environment;
+    private Environment $environment;
 
-    protected bool $debug;
+    private bool $debug;
 
-    /**
-     * @internal
-     */
-    protected bool $booted = false;
+    private bool $booted = false;
 
     private bool $booting = false;
 
@@ -51,27 +38,15 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
 
     public function __construct(
         Environment $environment,
-        ?ServiceRegistrar $registrar = null,
+        ?ContainerBuilderInterface $builder = null,
         bool $debug = false,
     ) {
         $this->environment = $environment;
-        $this->registrar   = $registrar ?: new DefaultServiceRegistrar();
+        $this->builder     = $builder ?? new DI\ContainerBuilder();
         $this->debug       = $debug;
         $this->modules     = new Module\ModuleLoader();
         $this->definitions = new DI\DefinitionRepository();
         $this->hooks       = new Hook\HookRepository();
-
-        $this->registerDefaultDefinitions();
-    }
-
-    protected function dispatchKernelEvent(Event\KernelEvent $event): void
-    {
-        if ($this->container && $this->container->has(EventDispatcherInterface::class)) {
-            /** @var \Psr\EventDispatcher\EventDispatcherInterface $dispatcher */
-            $dispatcher = $this->container->get(EventDispatcherInterface::class);
-
-            $dispatcher->dispatch($event);
-        }
     }
 
     private function initProfiler(): void
@@ -96,30 +71,6 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
         }
     }
 
-    private function registerDefaultDefinitions(): void
-    {
-        $this->definitions->add(KernelInterface::class, fn() => $this)->share()->alias('kernel');
-        $this->definitions->add('kernel.debug', fn() => $this->isDebug())->share();
-        $this->definitions->add('kernel.environment', fn() => $this->getEnvironment())->share();
-        $this->definitions
-             ->add(DI\TagRegistryInterface::class, fn(ContainerInterface $c) => new DI\TagRegistry($c, $this->tags))
-             ->share()
-             ->alias('kernel.tag.registry');
-
-        $this->reservedServices = [
-            KernelInterface::class,
-            DI\TagRegistryInterface::class,
-            'kernel',
-            'kernel.config',
-            'kernel.debug',
-            'kernel.environment',
-            'kernel.tag.registry',
-        ];
-    }
-
-    /**
-     * @inheritdoc
-     */
     public function boot(): void
     {
         if ($this->isBooted()) {
@@ -157,27 +108,31 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
         });
 
         $this->profile('serviceRegistration', function () {
+            $tags = [];
+
             foreach ($this->definitions->all() as $definition) {
                 $id      = $definition->getId();
                 $aliases = $definition->getAliases();
 
-                if (!in_array($id, $this->reservedServices, true) && array_intersect($this->reservedServices, $aliases)) {
-                    throw new KernelException('Cannot overwrite a reserved service definition');
-                }
-
-                $this->registrar->register($id, $definition->getFactory(), $definition->isShared(), $aliases);
+                $this->builder->register($id, $definition->getFactory(), $definition->isShared(), $aliases);
 
                 foreach ($definition->getTags() as $tag) {
-                    $this->tags[$tag][] = $id;
+                    $tags[$tag][] = $id;
                 }
             }
+
+            $this->builder->register(
+                DI\TagRegistryInterface::class,
+                fn(ContainerInterface $c) => new DI\TagRegistry($c, $tags),
+                true
+            );
         });
 
         $this->profile('containerInit', function () {
-            if ($this->isDebug() && $this->registrar instanceof ResolvingAwareServiceRegistrar) {
+            if ($this->isDebug()) {
                 $this->serviceResolution = new Debug\ServiceResolution($this->definitions->getRaw());
 
-                $this->registrar->afterResolved(
+                $this->builder->onResolved(
                     function (string $id, mixed $resolved) {
                         assert(null !== $this->serviceResolution);
 
@@ -186,7 +141,7 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
                 );
             }
 
-            $this->container = $this->registrar->getContainer();
+            $this->container = $this->builder->getContainer();
         });
 
         $this->profile('moduleBoot', function () {
@@ -200,8 +155,6 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
         $this->booting = false;
 
         $this->profile('postBoot', function () {
-            $this->dispatchKernelEvent(new Event\KernelBooted($this));
-
             foreach ($this->hooks->getOnBootedCallbacks() as $callback) {
                 $callback($this);
             }
@@ -322,24 +275,20 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
         return $this;
     }
 
-    /**
-     * @inheritdoc
-     */
-    public function addDefinition(string $id, callable $factory, bool $shared = false, array $aliases = [], array $tags = []): static
+    public function onResolving(callable $callback): static
     {
-        $definition = $this->define($id, $factory);
+        KernelException::throwIf($this->isBooted(), 'Kernel has already been booted, cannot add new pre-resolution callbacks');
 
-        if ($shared) {
-            $definition->share();
-        }
+        $this->builder->onResolving($callback);
 
-        foreach ($aliases as $alias) {
-            $definition->alias($alias);
-        }
+        return $this;
+    }
 
-        foreach ($tags as $tag) {
-            $definition->tag($tag);
-        }
+    public function onResolved(callable $callback): static
+    {
+        KernelException::throwIf($this->isBooted(), 'Kernel has already been booted, cannot add new post-resolution callbacks');
+
+        $this->builder->onResolved($callback);
 
         return $this;
     }
@@ -348,41 +297,12 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
     {
         KernelException::throwIf($this->isBooted(), 'Kernel has already been booted, cannot add new container definitions');
 
-        if (in_array($id, $this->reservedServices, true)) {
-            KernelException::throw('Cannot overwrite a reserved service definition');
-        }
-
         return $this->definitions->add($id, $factory);
     }
 
-    /**
-     * @inheritdoc
-     */
-    public function tag(string $id, array $tags): static
-    {
-        KernelException::throwIf($this->isBooted(), 'Kernel has already been booted, cannot add new container definition tags');
-
-        $definition = $this->definitions->get($id);
-
-        if (null !== $definition) {
-            foreach ($tags as $tag) {
-                $definition->tag($tag);
-            }
-        }
-
-        return $this;
-    }
-
-    /**
-     * @inheritdoc
-     */
     public function decorate(string $id, callable $decorator): static
     {
         KernelException::throwIf($this->isBooted(), 'Kernel has already been booted, cannot add new definition decorators');
-
-        if (in_array($id, $this->reservedServices, true)) {
-            KernelException::throw('Cannot decorate a reserved service definition');
-        }
 
         $this->definitions->decorate($id, $decorator);
 
@@ -393,16 +313,9 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
     {
         KernelException::throwIf($this->isBooted(), 'Kernel has already been booted, cannot override service definitions');
 
-        if (in_array($id, $this->reservedServices, true)) {
-            KernelException::throw('Cannot overwrite a reserved service definition');
-        }
-
         return $this->definitions->override($id, $factory, $preserve);
     }
 
-    /**
-     * @inheritdoc
-     */
     public function addModule(ModuleInterface $module): static
     {
         KernelException::throwIf($this->isBooted(), 'Kernel has already been booted, cannot add new modules');
@@ -414,9 +327,6 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
         return $this;
     }
 
-    /**
-     * @inheritdoc
-     */
     public function addRepository(ModuleRepositoryInterface $repository): static
     {
         KernelException::throwIf($this->isBooted(), 'Kernel has already been booted, cannot add new module repositories');
@@ -428,9 +338,6 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
         return $this;
     }
 
-    /**
-     * @inheritdoc
-     */
     public function getContainer(): ContainerInterface
     {
         KernelException::throwIfNot($this->isBooted(), 'Container is inaccessible, kernel has not been booted');
@@ -440,17 +347,11 @@ class Kernel implements KernelInterface, Debug\DebuggableInterface
         return $this->container;
     }
 
-    /**
-     * @inheritdoc
-     */
     public function getStartTime(): float
     {
         return $this->isDebug() && null !== $this->startTime ? $this->startTime : -INF;
     }
 
-    /**
-     * @inheritdoc
-     */
     public function getDebugInfo(): array
     {
         if (!$this->isDebug()) {

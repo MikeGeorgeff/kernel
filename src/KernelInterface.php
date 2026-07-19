@@ -7,7 +7,7 @@ use Georgeff\Kernel\Module\ModuleInterface;
 use Georgeff\Kernel\DI\DefinitionInterface;
 use Georgeff\Kernel\Module\ModuleRepositoryInterface;
 
-interface KernelInterface
+interface KernelInterface extends Debug\DebuggableInterface
 {
     /**
      * Boot the kernel
@@ -95,17 +95,22 @@ interface KernelInterface
     public function afterShutdown(callable $callback): static;
 
     /**
-     * Add a container definition
+     * Register a pre-resolving callback
      *
-     * @param string                               $id
-     * @param callable(ContainerInterface): mixed  $factory
-     * @param bool                                 $shared
-     * @param string[]                             $aliases
-     * @param string[]                             $tags
+     * @param callable(string): void $callback
      *
      * @return static
      */
-    public function addDefinition(string $id, callable $factory, bool $shared = false, array $aliases = [], array $tags = []): static;
+    public function onResolving(callable $callback): static;
+
+    /**
+     * Register a post-resolving callback
+     *
+     * @param callable(string, mixed): void $callback
+     *
+     * @return static
+     */
+    public function onResolved(callable $callback): static;
 
     /**
      * Add a container definition using the fluent builder
@@ -116,16 +121,6 @@ interface KernelInterface
      * @return DefinitionInterface
      */
     public function define(string $id, callable $factory): DefinitionInterface;
-
-    /**
-     * Tag a container definition
-     *
-     * @param string   $id
-     * @param string[] $tags
-     *
-     * @return static
-     */
-    public function tag(string $id, array $tags): static;
 
     /**
      * Decorate a container definition

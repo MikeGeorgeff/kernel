@@ -2,9 +2,10 @@
 
 namespace Georgeff\Kernel\Test;
 
+use Georgeff\Kernel\Contract\ContainerBuilderInterface;
+use Georgeff\Kernel\DI\DefinitionInterface;
 use Georgeff\Kernel\DI\TagRegistryInterface;
 use Georgeff\Kernel\Environment;
-use Georgeff\Kernel\Event\KernelBooted;
 use Georgeff\Kernel\Kernel;
 use Georgeff\Kernel\KernelException;
 use Georgeff\Kernel\KernelInterface;
@@ -12,10 +13,8 @@ use Georgeff\Kernel\Module\BootableModuleInterface;
 use Georgeff\Kernel\Module\ConfigurableModuleInterface;
 use Georgeff\Kernel\Module\ModuleInterface;
 use Georgeff\Kernel\Module\ModuleRepositoryInterface;
-use Georgeff\Kernel\ServiceRegistrar;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
-use Psr\EventDispatcher\EventDispatcherInterface;
 
 class KernelTest extends TestCase
 {
@@ -73,11 +72,11 @@ class KernelTest extends TestCase
 
     public function test_boot_is_idempotent(): void
     {
-        $registrar = $this->createMockRegistrar();
+        $builder = $this->createContainerBuilderMock();
 
-        $registrar->expects($this->once())->method('getContainer');
+        $builder->expects($this->once())->method('getContainer');
 
-        $kernel = new Kernel(Environment::Testing, $registrar);
+        $kernel = new Kernel(Environment::Testing, $builder);
         $kernel->boot();
         $kernel->boot();
 
@@ -121,34 +120,12 @@ class KernelTest extends TestCase
         $kernel->getContainer();
     }
 
-    public function test_it_registers_itself_in_the_container(): void
-    {
-        $kernel = new Kernel(Environment::Testing);
-        $kernel->boot();
-
-        $container = $kernel->getContainer();
-
-        $this->assertTrue($container->has('kernel'));
-        $this->assertSame($kernel, $container->get('kernel'));
-    }
-
-    public function test_it_aliases_itself_as_kernel_interface(): void
-    {
-        $kernel = new Kernel(Environment::Testing);
-        $kernel->boot();
-
-        $container = $kernel->getContainer();
-
-        $this->assertTrue($container->has(KernelInterface::class));
-        $this->assertSame($kernel, $container->get(KernelInterface::class));
-    }
-
     public function test_it_registers_user_definitions(): void
     {
         $service = new \stdClass();
 
         $kernel = new Kernel(Environment::Testing);
-        $kernel->addDefinition('my.service', fn() => $service, true);
+        $kernel->define('my.service', fn() => $service)->share();
         $kernel->boot();
 
         $this->assertSame($service, $kernel->getContainer()->get('my.service'));
@@ -159,7 +136,7 @@ class KernelTest extends TestCase
         $service = new \stdClass();
 
         $kernel = new Kernel(Environment::Testing);
-        $kernel->addDefinition('my.service', fn() => $service, true, ['MyServiceAlias']);
+        $kernel->define('my.service', fn() => $service)->share()->alias('MyServiceAlias');
         $kernel->boot();
 
         $container = $kernel->getContainer();
@@ -168,41 +145,27 @@ class KernelTest extends TestCase
         $this->assertSame($service, $container->get('MyServiceAlias'));
     }
 
-    public function test_add_definition_returns_the_kernel(): void
+    public function test_define_returns_a_definition(): void
     {
         $kernel = new Kernel(Environment::Testing);
 
-        $result = $kernel->addDefinition('foo', fn() => 'bar');
+        $definition = $kernel->define('foo', fn() => 'bar');
 
-        $this->assertSame($kernel, $result);
+        $this->assertInstanceOf(DefinitionInterface::class, $definition);
     }
 
-    public function test_add_definition_is_fluent(): void
+    public function test_define_overwrites_existing_id(): void
     {
         $kernel = new Kernel(Environment::Testing);
 
-        $kernel
-            ->addDefinition('foo', fn() => 'foo_value', true)
-            ->addDefinition('bar', fn() => 'bar_value', true);
-
-        $kernel->boot();
-
-        $this->assertSame('foo_value', $kernel->getContainer()->get('foo'));
-        $this->assertSame('bar_value', $kernel->getContainer()->get('bar'));
-    }
-
-    public function test_add_definition_overwrites_existing_id(): void
-    {
-        $kernel = new Kernel(Environment::Testing);
-
-        $kernel->addDefinition('foo', fn() => 'first', true);
-        $kernel->addDefinition('foo', fn() => 'second', true);
+        $kernel->define('foo', fn() => 'first')->share();
+        $kernel->define('foo', fn() => 'second')->share();
         $kernel->boot();
 
         $this->assertSame('second', $kernel->getContainer()->get('foo'));
     }
 
-    public function test_it_throws_when_adding_definition_after_boot(): void
+    public function test_it_throws_when_defining_after_boot(): void
     {
         $kernel = new Kernel(Environment::Testing);
         $kernel->boot();
@@ -210,49 +173,7 @@ class KernelTest extends TestCase
         $this->expectException(KernelException::class);
         $this->expectExceptionMessage('Kernel has already been booted, cannot add new container definitions');
 
-        $kernel->addDefinition('foo', fn() => 'bar');
-    }
-
-    public function test_it_throws_when_adding_definition_with_reserved_kernel_id(): void
-    {
-        $kernel = new Kernel(Environment::Testing);
-
-        $this->expectException(KernelException::class);
-        $this->expectExceptionMessage('Cannot overwrite a reserved service definition');
-
-        $kernel->addDefinition('kernel', fn() => 'fake');
-        $kernel->boot();
-    }
-
-    public function test_it_throws_when_adding_definition_with_reserved_kernel_interface_id(): void
-    {
-        $kernel = new Kernel(Environment::Testing);
-
-        $this->expectException(KernelException::class);
-        $this->expectExceptionMessage('Cannot overwrite a reserved service definition');
-
-        $kernel->addDefinition(KernelInterface::class, fn() => 'fake');
-        $kernel->boot();
-    }
-
-    public function test_it_throws_when_adding_definition_with_reserved_kernel_alias(): void
-    {
-        $kernel = new Kernel(Environment::Testing);
-
-        $this->expectException(KernelException::class);
-
-        $kernel->addDefinition('foo', fn() => 'bar', false, ['kernel']);
-        $kernel->boot();
-    }
-
-    public function test_it_throws_when_adding_definition_with_reserved_kernel_interface_alias(): void
-    {
-        $kernel = new Kernel(Environment::Testing);
-
-        $this->expectException(KernelException::class);
-
-        $kernel->addDefinition('foo', fn() => 'bar', false, [KernelInterface::class]);
-        $kernel->boot();
+        $kernel->define('foo', fn() => 'bar');
     }
 
     public function test_on_booting_callback_is_called_during_boot(): void
@@ -395,28 +316,11 @@ class KernelTest extends TestCase
         $kernel->onBooted(function () {});
     }
 
-    public function test_on_booting_and_add_definition_are_fluent(): void
-    {
-        $bootingCalled = false;
-
-        $kernel = new Kernel(Environment::Testing);
-        $kernel
-            ->onBooting(function () use (&$bootingCalled) {
-                $bootingCalled = true;
-            })
-            ->addDefinition('foo', fn() => 'bar', true);
-
-        $kernel->boot();
-
-        $this->assertTrue($bootingCalled);
-        $this->assertSame('bar', $kernel->getContainer()->get('foo'));
-    }
-
-    public function test_on_booting_can_add_definitions(): void
+    public function test_on_booting_can_define_services(): void
     {
         $kernel = new Kernel(Environment::Testing);
         $kernel->onBooting(function (KernelInterface $k): void {
-            $k->addDefinition('dynamic', fn() => 'added_in_booting', true);
+            $k->define('dynamic', fn() => 'added_in_booting')->share();
         });
 
         $kernel->boot();
@@ -424,28 +328,154 @@ class KernelTest extends TestCase
         $this->assertSame('added_in_booting', $kernel->getContainer()->get('dynamic'));
     }
 
-    public function test_it_registers_environment_in_container(): void
-    {
-        $kernel = new Kernel(Environment::Production);
-        $kernel->boot();
+    // -------------------------------------------------------------------------
+    // onResolving() / onResolved()
+    // -------------------------------------------------------------------------
 
-        $this->assertSame('production', $kernel->getContainer()->get('kernel.environment'));
+    public function test_on_resolving_returns_the_kernel(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+
+        $result = $kernel->onResolving(function () {});
+
+        $this->assertSame($kernel, $result);
     }
 
-    public function test_it_registers_debug_in_container(): void
+    public function test_on_resolved_returns_the_kernel(): void
     {
-        $kernel = new Kernel(Environment::Testing, debug: true);
-        $kernel->boot();
+        $kernel = new Kernel(Environment::Testing);
 
-        $this->assertTrue($kernel->getContainer()->get('kernel.debug'));
+        $result = $kernel->onResolved(function () {});
+
+        $this->assertSame($kernel, $result);
     }
 
-    public function test_it_registers_debug_false_in_container(): void
+    public function test_on_resolving_callback_fires_before_factory_runs(): void
+    {
+        $calls = [];
+
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->define('foo', fn() => 'bar')->share();
+        $kernel->onResolving(function (string $id) use (&$calls) {
+            $calls[] = $id;
+        });
+        $kernel->boot();
+
+        $kernel->getContainer()->get('foo');
+
+        $this->assertSame(['foo'], $calls);
+    }
+
+    public function test_on_resolving_fires_on_every_get_call_including_cache_hits(): void
+    {
+        $calls = 0;
+
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->define('foo', fn() => 'bar')->share();
+        $kernel->onResolving(function () use (&$calls) {
+            $calls++;
+        });
+        $kernel->boot();
+
+        $kernel->getContainer()->get('foo');
+        $kernel->getContainer()->get('foo');
+
+        $this->assertSame(2, $calls);
+    }
+
+    public function test_on_resolved_callback_fires_after_factory_runs(): void
+    {
+        $calls = [];
+
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->define('foo', fn() => new \stdClass())->share();
+        $kernel->onResolved(function (string $id, mixed $resolved) use (&$calls) {
+            $calls[] = [$id, $resolved];
+        });
+        $kernel->boot();
+
+        $instance = $kernel->getContainer()->get('foo');
+
+        $this->assertCount(1, $calls);
+        $this->assertSame('foo', $calls[0][0]);
+        $this->assertSame($instance, $calls[0][1]);
+    }
+
+    public function test_on_resolved_does_not_fire_on_cache_hit(): void
+    {
+        $calls = 0;
+
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->define('foo', fn() => new \stdClass())->share();
+        $kernel->onResolved(function () use (&$calls) {
+            $calls++;
+        });
+        $kernel->boot();
+
+        $kernel->getContainer()->get('foo');
+        $kernel->getContainer()->get('foo');
+
+        $this->assertSame(1, $calls);
+    }
+
+    public function test_multiple_on_resolved_callbacks_all_fire(): void
+    {
+        $fired = [];
+
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->define('foo', fn() => new \stdClass())->share();
+        $kernel->onResolved(function () use (&$fired) { $fired[] = 'a'; });
+        $kernel->onResolved(function () use (&$fired) { $fired[] = 'b'; });
+        $kernel->boot();
+
+        $kernel->getContainer()->get('foo');
+
+        $this->assertSame(['a', 'b'], $fired);
+    }
+
+    public function test_module_can_register_resolution_hooks(): void
+    {
+        $calls = [];
+
+        $module = new class implements ModuleInterface {
+            public function register(KernelInterface $kernel): void
+            {
+                $kernel->define('foo', fn() => 'bar')->share();
+            }
+        };
+
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->addModule($module);
+        $kernel->onResolved(function (string $id) use (&$calls) {
+            $calls[] = $id;
+        });
+        $kernel->boot();
+
+        $kernel->getContainer()->get('foo');
+
+        $this->assertSame(['foo'], $calls);
+    }
+
+    public function test_it_throws_when_registering_on_resolving_after_boot(): void
     {
         $kernel = new Kernel(Environment::Testing);
         $kernel->boot();
 
-        $this->assertFalse($kernel->getContainer()->get('kernel.debug'));
+        $this->expectException(KernelException::class);
+        $this->expectExceptionMessage('Kernel has already been booted, cannot add new pre-resolution callbacks');
+
+        $kernel->onResolving(function () {});
+    }
+
+    public function test_it_throws_when_registering_on_resolved_after_boot(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->boot();
+
+        $this->expectException(KernelException::class);
+        $this->expectExceptionMessage('Kernel has already been booted, cannot add new post-resolution callbacks');
+
+        $kernel->onResolved(function () {});
     }
 
     public function test_get_start_time_returns_negative_infinity_when_not_debug(): void
@@ -472,45 +502,7 @@ class KernelTest extends TestCase
         $this->assertSame(-INF, $kernel->getStartTime());
     }
 
-    public function test_it_dispatches_kernel_booted_event(): void
-    {
-        /** @var list<object> $events */
-        $events = [];
-
-        $dispatcher = new class($events) implements EventDispatcherInterface {
-            /** @param list<object> &$events */
-            public function __construct(private array &$events) {}
-
-            public function dispatch(object $event): object
-            {
-                $this->events[] = $event;
-
-                return $event;
-            }
-        };
-
-        $kernel = new Kernel(Environment::Testing);
-        $kernel->addDefinition(
-            EventDispatcherInterface::class,
-            fn() => $dispatcher,
-            true,
-        );
-        $kernel->boot();
-
-        $this->assertCount(1, $events);
-        $this->assertInstanceOf(KernelBooted::class, $events[0]);
-        $this->assertSame($kernel, $events[0]->kernel);
-    }
-
-    public function test_boot_does_not_fail_without_event_dispatcher(): void
-    {
-        $kernel = new Kernel(Environment::Testing);
-        $kernel->boot();
-
-        $this->assertTrue($kernel->isBooted());
-    }
-
-    public function test_it_uses_default_service_registrar(): void
+    public function test_it_uses_default_container_builder(): void
     {
         $kernel = new Kernel(Environment::Testing);
         $kernel->boot();
@@ -518,14 +510,14 @@ class KernelTest extends TestCase
         $this->assertInstanceOf(ContainerInterface::class, $kernel->getContainer());
     }
 
-    public function test_it_uses_custom_service_registrar(): void
+    public function test_it_uses_custom_container_builder(): void
     {
         $container = $this->createMock(ContainerInterface::class);
 
-        $registrar = $this->createMockRegistrar();
-        $registrar->method('getContainer')->willReturn($container);
+        $builder = $this->createContainerBuilderMock();
+        $builder->method('getContainer')->willReturn($container);
 
-        $kernel = new Kernel(Environment::Testing, $registrar);
+        $kernel = new Kernel(Environment::Testing, $builder);
         $kernel->boot();
 
         $this->assertSame($container, $kernel->getContainer());
@@ -586,21 +578,10 @@ class KernelTest extends TestCase
         $this->assertSame([], $kernel->getDebugInfo());
     }
 
-    public function test_get_debug_info_does_not_include_services_when_registrar_is_not_resolving_aware(): void
-    {
-        $registrar = $this->createMockRegistrar();
-        $registrar->method('getContainer')->willReturn($this->createMock(\Psr\Container\ContainerInterface::class));
-
-        $kernel = new Kernel(Environment::Testing, $registrar, debug: true);
-        $kernel->boot();
-
-        $this->assertArrayNotHasKey('services', $kernel->getDebugInfo());
-    }
-
     public function test_get_debug_info_returns_service_resolution_profile_in_debug_mode(): void
     {
         $kernel = new Kernel(Environment::Testing, debug: true);
-        $kernel->addDefinition('foo', fn() => 'bar', true);
+        $kernel->define('foo', fn() => 'bar')->share();
         $kernel->boot();
 
         $info = $kernel->getDebugInfo();
@@ -613,7 +594,7 @@ class KernelTest extends TestCase
     public function test_get_debug_info_tracks_resolved_services(): void
     {
         $kernel = new Kernel(Environment::Testing, debug: true);
-        $kernel->addDefinition('foo', fn() => 'bar', true);
+        $kernel->define('foo', fn() => 'bar')->share();
         $kernel->boot();
 
         $kernel->getContainer()->get('foo');
@@ -630,7 +611,7 @@ class KernelTest extends TestCase
         };
 
         $kernel = new Kernel(Environment::Testing, debug: true);
-        $kernel->addDefinition('foo', fn() => $service, true);
+        $kernel->define('foo', fn() => $service)->share();
         $kernel->boot();
 
         $kernel->getContainer()->get('foo');
@@ -646,28 +627,6 @@ class KernelTest extends TestCase
         $kernel = new Kernel(Environment::Testing);
 
         $this->assertInstanceOf(\Georgeff\Kernel\Debug\DebuggableInterface::class, $kernel);
-    }
-
-    public function test_it_throws_when_adding_definition_with_reserved_environment_id(): void
-    {
-        $kernel = new Kernel(Environment::Testing);
-
-        $this->expectException(KernelException::class);
-        $this->expectExceptionMessage('Cannot overwrite a reserved service definition');
-
-        $kernel->addDefinition('kernel.environment', fn() => 'fake');
-        $kernel->boot();
-    }
-
-    public function test_it_throws_when_adding_definition_with_reserved_debug_id(): void
-    {
-        $kernel = new Kernel(Environment::Testing);
-
-        $this->expectException(KernelException::class);
-        $this->expectExceptionMessage('Cannot overwrite a reserved service definition');
-
-        $kernel->addDefinition('kernel.debug', fn() => 'fake');
-        $kernel->boot();
     }
 
     // -------------------------------------------------------------------------
@@ -847,7 +806,7 @@ class KernelTest extends TestCase
             public function __construct(private \stdClass $service) {}
             public function register(KernelInterface $kernel): void
             {
-                $kernel->addDefinition('module.service', fn() => $this->service, true);
+                $kernel->define('module.service', fn() => $this->service)->share();
             }
         };
 
@@ -980,17 +939,6 @@ class KernelTest extends TestCase
         $kernel->boot();
 
         $this->assertSame(Environment::Production, $receivedEnv);
-    }
-
-    public function test_kernel_config_is_reserved(): void
-    {
-        $kernel = new Kernel(Environment::Testing);
-
-        $this->expectException(KernelException::class);
-        $this->expectExceptionMessage('Cannot overwrite a reserved service definition');
-
-        $kernel->addDefinition('kernel.config', fn() => []);
-        $kernel->boot();
     }
 
     // -------------------------------------------------------------------------
@@ -1287,7 +1235,7 @@ class KernelTest extends TestCase
     public function test_decorate_returns_the_kernel(): void
     {
         $kernel = new Kernel(Environment::Testing);
-        $kernel->addDefinition('my.service', fn() => new \stdClass());
+        $kernel->define('my.service', fn() => new \stdClass());
 
         $result = $kernel->decorate('my.service', fn($inner, $c) => $inner);
 
@@ -1297,8 +1245,8 @@ class KernelTest extends TestCase
     public function test_decorate_is_fluent(): void
     {
         $kernel = new Kernel(Environment::Testing);
-        $kernel->addDefinition('foo', fn() => 'foo', true);
-        $kernel->addDefinition('bar', fn() => 'bar', true);
+        $kernel->define('foo', fn() => 'foo')->share();
+        $kernel->define('bar', fn() => 'bar')->share();
 
         $kernel
             ->decorate('foo', fn($inner, $c) => "decorated_{$inner}")
@@ -1321,16 +1269,6 @@ class KernelTest extends TestCase
         $kernel->decorate('my.service', fn($inner, $c) => $inner);
     }
 
-    public function test_decorate_throws_for_reserved_service(): void
-    {
-        $kernel = new Kernel(Environment::Testing);
-
-        $this->expectException(KernelException::class);
-        $this->expectExceptionMessage('Cannot decorate a reserved service definition');
-
-        $kernel->decorate(KernelInterface::class, fn($inner, $c) => $inner);
-    }
-
     public function test_decorate_throws_when_definition_does_not_exist(): void
     {
         $kernel = new Kernel(Environment::Testing);
@@ -1347,7 +1285,7 @@ class KernelTest extends TestCase
         $inner = new \stdClass();
 
         $kernel = new Kernel(Environment::Testing);
-        $kernel->addDefinition('my.service', fn() => $inner, true);
+        $kernel->define('my.service', fn() => $inner)->share();
         $kernel->decorate('my.service', fn($i, $c) => ['decorated' => $i]);
         $kernel->boot();
 
@@ -1359,7 +1297,7 @@ class KernelTest extends TestCase
     public function test_decorate_passes_container_to_decorator(): void
     {
         $kernel = new Kernel(Environment::Testing);
-        $kernel->addDefinition('my.service', fn() => new \stdClass(), true);
+        $kernel->define('my.service', fn() => new \stdClass())->share();
 
         $receivedContainer = null;
         $kernel->decorate('my.service', function ($inner, $c) use (&$receivedContainer) {
@@ -1378,7 +1316,7 @@ class KernelTest extends TestCase
         $calls = 0;
 
         $kernel = new Kernel(Environment::Testing);
-        $kernel->addDefinition('my.service', fn() => new \stdClass(), true);
+        $kernel->define('my.service', fn() => new \stdClass())->share();
         $kernel->decorate('my.service', function ($inner, $c) use (&$calls) {
             $calls++;
             return $inner;
@@ -1396,7 +1334,7 @@ class KernelTest extends TestCase
         $inner = new \stdClass();
 
         $kernel = new Kernel(Environment::Testing);
-        $kernel->addDefinition('my.service', fn() => $inner, true, ['my.alias']);
+        $kernel->define('my.service', fn() => $inner)->share()->alias('my.alias');
         $kernel->decorate('my.service', fn($i, $c) => ['decorated' => $i]);
         $kernel->boot();
 
@@ -1410,7 +1348,7 @@ class KernelTest extends TestCase
         $inner = new \stdClass();
 
         $kernel = new Kernel(Environment::Testing);
-        $kernel->addDefinition('my.service', fn() => $inner, true, [], ['my.tag']);
+        $kernel->define('my.service', fn() => $inner)->share()->tag('my.tag');
         $kernel->decorate('my.service', fn($i, $c) => ['decorated' => $i]);
         $kernel->boot();
 
@@ -1428,7 +1366,7 @@ class KernelTest extends TestCase
             public function __construct(private \stdClass $inner) {}
             public function register(KernelInterface $kernel): void
             {
-                $kernel->addDefinition('my.service', fn() => $this->inner, true);
+                $kernel->define('my.service', fn() => $this->inner)->share();
             }
         };
 
@@ -1453,11 +1391,11 @@ class KernelTest extends TestCase
     public function test_override_returns_a_definition(): void
     {
         $kernel = new Kernel(Environment::Testing);
-        $kernel->addDefinition('my.service', fn() => 'original');
+        $kernel->define('my.service', fn() => 'original');
 
         $definition = $kernel->override('my.service', fn() => 'overridden');
 
-        $this->assertInstanceOf(\Georgeff\Kernel\DI\DefinitionInterface::class, $definition);
+        $this->assertInstanceOf(DefinitionInterface::class, $definition);
     }
 
     public function test_override_throws_after_boot(): void
@@ -1469,16 +1407,6 @@ class KernelTest extends TestCase
         $this->expectExceptionMessage('Kernel has already been booted, cannot override service definitions');
 
         $kernel->override('my.service', fn() => 'overridden');
-    }
-
-    public function test_override_throws_for_reserved_service(): void
-    {
-        $kernel = new Kernel(Environment::Testing);
-
-        $this->expectException(KernelException::class);
-        $this->expectExceptionMessage('Cannot overwrite a reserved service definition');
-
-        $kernel->override(KernelInterface::class, fn() => new \stdClass());
     }
 
     public function test_override_throws_when_definition_does_not_exist(): void
@@ -1495,7 +1423,7 @@ class KernelTest extends TestCase
     public function test_override_replaces_the_service(): void
     {
         $kernel = new Kernel(Environment::Testing);
-        $kernel->addDefinition('my.service', fn() => 'original');
+        $kernel->define('my.service', fn() => 'original');
         $kernel->override('my.service', fn() => 'overridden');
         $kernel->boot();
 
@@ -1528,7 +1456,7 @@ class KernelTest extends TestCase
         $calls = 0;
 
         $kernel = new Kernel(Environment::Testing);
-        $kernel->addDefinition('my.service', fn() => 'original', true);
+        $kernel->define('my.service', fn() => 'original')->share();
         $kernel->override('my.service', function () use (&$calls) {
             $calls++;
             return 'overridden';
@@ -1546,7 +1474,7 @@ class KernelTest extends TestCase
         $calls = 0;
 
         $kernel = new Kernel(Environment::Testing);
-        $kernel->addDefinition('my.service', fn() => 'original');
+        $kernel->define('my.service', fn() => 'original');
         $kernel->override('my.service', function () use (&$calls) {
             $calls++;
             return 'overridden';
@@ -1562,7 +1490,7 @@ class KernelTest extends TestCase
     public function test_override_does_not_inherit_aliases_from_original(): void
     {
         $kernel = new Kernel(Environment::Testing);
-        $kernel->addDefinition('my.service', fn() => 'original', true, ['my.alias']);
+        $kernel->define('my.service', fn() => 'original')->share()->alias('my.alias');
         $kernel->override('my.service', fn() => 'overridden');
         $kernel->boot();
 
@@ -1574,7 +1502,7 @@ class KernelTest extends TestCase
     public function test_override_does_not_inherit_tags_from_original(): void
     {
         $kernel = new Kernel(Environment::Testing);
-        $kernel->addDefinition('my.service', fn() => 'original', true, [], ['my.tag']);
+        $kernel->define('my.service', fn() => 'original')->share()->tag('my.tag');
         $kernel->override('my.service', fn() => 'overridden');
         $kernel->boot();
 
@@ -1591,7 +1519,7 @@ class KernelTest extends TestCase
         $calls = 0;
 
         $kernel = new Kernel(Environment::Testing);
-        $kernel->addDefinition('my.service', fn() => 'original', true, ['my.alias'], ['my.tag']);
+        $kernel->define('my.service', fn() => 'original')->share()->alias('my.alias')->tag('my.tag');
         $kernel->override('my.service', function () use (&$calls) {
             $calls++;
             return 'overridden';
@@ -1617,7 +1545,7 @@ class KernelTest extends TestCase
         $definingModule = new class implements ModuleInterface {
             public function register(KernelInterface $kernel): void
             {
-                $kernel->addDefinition('my.service', fn() => 'from module');
+                $kernel->define('my.service', fn() => 'from module');
             }
         };
 
@@ -1636,44 +1564,6 @@ class KernelTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // tag()
-    // -------------------------------------------------------------------------
-
-    public function test_tag_returns_the_kernel(): void
-    {
-        $kernel = new Kernel(Environment::Testing);
-        $kernel->addDefinition('my.service', fn() => new \stdClass());
-
-        $result = $kernel->tag('my.service', ['my.tag']);
-
-        $this->assertSame($kernel, $result);
-    }
-
-    public function test_tag_throws_after_boot(): void
-    {
-        $kernel = new Kernel(Environment::Testing);
-        $kernel->boot();
-
-        $this->expectException(KernelException::class);
-        $this->expectExceptionMessage('Kernel has already been booted, cannot add new container definition tags');
-
-        $kernel->tag('kernel', ['some.tag']);
-    }
-
-    public function test_tag_does_not_create_duplicate_entries(): void
-    {
-        $service = new \stdClass();
-
-        $kernel = new Kernel(Environment::Testing);
-        $kernel->addDefinition('my.service', fn() => $service, true);
-        $kernel->tag('my.service', ['my.tag']);
-        $kernel->tag('my.service', ['my.tag']);
-        $kernel->boot();
-
-        $this->assertCount(1, $kernel->getContainer()->get(TagRegistryInterface::class)->getTagged('my.tag'));
-    }
-
-    // -------------------------------------------------------------------------
     // TagRegistry
     // -------------------------------------------------------------------------
 
@@ -1686,45 +1576,12 @@ class KernelTest extends TestCase
         $this->assertInstanceOf(TagRegistryInterface::class, $kernel->getContainer()->get(TagRegistryInterface::class));
     }
 
-    public function test_tag_registry_is_accessible_by_alias(): void
-    {
-        $kernel = new Kernel(Environment::Testing);
-        $kernel->boot();
-
-        $container = $kernel->getContainer();
-
-        $this->assertTrue($container->has('kernel.tag.registry'));
-        $this->assertSame($container->get(TagRegistryInterface::class), $container->get('kernel.tag.registry'));
-    }
-
-    public function test_tag_registry_interface_is_reserved(): void
-    {
-        $kernel = new Kernel(Environment::Testing);
-
-        $this->expectException(KernelException::class);
-        $this->expectExceptionMessage('Cannot overwrite a reserved service definition');
-
-        $kernel->addDefinition(TagRegistryInterface::class, fn() => null);
-        $kernel->boot();
-    }
-
-    public function test_kernel_tag_registry_alias_is_reserved(): void
-    {
-        $kernel = new Kernel(Environment::Testing);
-
-        $this->expectException(KernelException::class);
-        $this->expectExceptionMessage('Cannot overwrite a reserved service definition');
-
-        $kernel->addDefinition('foo', fn() => null, false, ['kernel.tag.registry']);
-        $kernel->boot();
-    }
-
-    public function test_tag_registry_resolves_services_tagged_via_add_definition(): void
+    public function test_tag_registry_resolves_services_tagged_via_define(): void
     {
         $service = new \stdClass();
 
         $kernel = new Kernel(Environment::Testing);
-        $kernel->addDefinition('my.service', fn() => $service, true, [], ['my.tag']);
+        $kernel->define('my.service', fn() => $service)->share()->tag('my.tag');
         $kernel->boot();
 
         $tagged = $kernel->getContainer()->get(TagRegistryInterface::class)->getTagged('my.tag');
@@ -1732,18 +1589,15 @@ class KernelTest extends TestCase
         $this->assertSame([$service], $tagged);
     }
 
-    public function test_tag_registry_resolves_services_tagged_via_tag_method(): void
+    public function test_tag_does_not_create_duplicate_entries(): void
     {
         $service = new \stdClass();
 
         $kernel = new Kernel(Environment::Testing);
-        $kernel->addDefinition('my.service', fn() => $service, true);
-        $kernel->tag('my.service', ['my.tag']);
+        $kernel->define('my.service', fn() => $service)->share()->tag('my.tag')->tag('my.tag');
         $kernel->boot();
 
-        $tagged = $kernel->getContainer()->get(TagRegistryInterface::class)->getTagged('my.tag');
-
-        $this->assertSame([$service], $tagged);
+        $this->assertCount(1, $kernel->getContainer()->get(TagRegistryInterface::class)->getTagged('my.tag'));
     }
 
     public function test_tag_registry_returns_empty_array_for_unknown_tag(): void
@@ -1756,36 +1610,8 @@ class KernelTest extends TestCase
         $this->assertSame([], $tagged);
     }
 
-    public function test_module_can_tag_services_from_another_module(): void
+    private function createContainerBuilderMock(): ContainerBuilderInterface&\PHPUnit\Framework\MockObject\MockObject
     {
-        $service = new \stdClass();
-
-        $definingModule = new class($service) implements ModuleInterface {
-            public function __construct(private \stdClass $service) {}
-            public function register(KernelInterface $kernel): void
-            {
-                $kernel->addDefinition('other.service', fn() => $this->service, true);
-            }
-        };
-
-        $taggingModule = new class implements ModuleInterface {
-            public function register(KernelInterface $kernel): void
-            {
-                $kernel->tag('other.service', ['shared.tag']);
-            }
-        };
-
-        $kernel = new Kernel(Environment::Testing);
-        $kernel->addModule($definingModule)->addModule($taggingModule);
-        $kernel->boot();
-
-        $tagged = $kernel->getContainer()->get(TagRegistryInterface::class)->getTagged('shared.tag');
-
-        $this->assertSame([$service], $tagged);
-    }
-
-    private function createMockRegistrar(): ServiceRegistrar&\PHPUnit\Framework\MockObject\MockObject
-    {
-        return $this->createMock(ServiceRegistrar::class);
+        return $this->createMock(ContainerBuilderInterface::class);
     }
 }

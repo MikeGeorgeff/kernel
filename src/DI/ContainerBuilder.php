@@ -1,14 +1,15 @@
 <?php
 
-namespace Georgeff\Kernel;
+namespace Georgeff\Kernel\DI;
 
 use Georgeff\Container\Container;
 use Psr\Container\ContainerInterface;
+use Georgeff\Kernel\Contract\ContainerBuilderInterface;
 
 /**
  * @internal
  */
-final class DefaultServiceRegistrar implements ResolvingAwareServiceRegistrar
+final class ContainerBuilder implements ContainerBuilderInterface
 {
     private Container $container;
 
@@ -17,9 +18,6 @@ final class DefaultServiceRegistrar implements ResolvingAwareServiceRegistrar
         $this->container = new Container();
     }
 
-    /**
-     * @inheritdoc
-     */
     public function register(string $id, callable $factory, bool $shared = false, array $aliases = []): void
     {
         $this->container->add($id, $factory, $shared);
@@ -29,17 +27,16 @@ final class DefaultServiceRegistrar implements ResolvingAwareServiceRegistrar
         }
     }
 
-    /**
-     * @inheritdoc
-     */
-    public function afterResolved(callable $callback): void
+    public function onResolving(callable $callback): void
+    {
+        $this->container->onResolving($callback);
+    }
+
+    public function onResolved(callable $callback): void
     {
         $this->container->afterResolved($callback);
     }
 
-    /**
-     * @inheritdoc
-     */
     public function getContainer(): ContainerInterface
     {
         return $this->container;
