@@ -39,6 +39,11 @@ class Kernel implements KernelInterface
 
     private bool $shutdown = false;
 
+    /**
+     * @var array<string, bool>
+     */
+    private array $sharedServices = [];
+
     public function __construct(
         Environment $environment,
         ?ContainerBuilderInterface $builder = null,
@@ -119,6 +124,10 @@ class Kernel implements KernelInterface
 
                 $this->builder->register($id, $definition->getFactory(), $definition->isShared(), $definition->getAliases());
 
+                if ($definition->isShared()) {
+                    $this->sharedServices[$id] = true;
+                }
+
                 foreach ($definition->getTags() as $tag) {
                     $tags[$tag][] = $id;
                 }
@@ -151,7 +160,7 @@ class Kernel implements KernelInterface
             }
 
             $this->builder->onResolved(function (string $id, mixed $resolved) {
-                if ($resolved instanceof Contract\ResettableInterface && $this->definitions->get($id)?->isShared()) {
+                if ($resolved instanceof Contract\ResettableInterface && isset($this->sharedServices[$id])) {
                     $this->resetter->add($id, $resolved);
                 }
             });
