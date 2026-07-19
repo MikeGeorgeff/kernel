@@ -3,7 +3,7 @@
 namespace Georgeff\Kernel\Test\Module;
 
 use Georgeff\Kernel\Environment;
-use Georgeff\Kernel\KernelException;
+use Georgeff\Kernel\Exception\KernelException;
 use Georgeff\Kernel\KernelInterface;
 use Georgeff\Kernel\Module\BootableModuleInterface;
 use Georgeff\Kernel\Module\ConfigurableModuleInterface;

@@ -4,7 +4,7 @@ namespace Georgeff\Kernel\Test\DI;
 
 use Georgeff\Kernel\DI\DefinitionInterface;
 use Georgeff\Kernel\DI\DefinitionRepository;
-use Georgeff\Kernel\KernelException;
+use Georgeff\Kernel\Exception\KernelException;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
 

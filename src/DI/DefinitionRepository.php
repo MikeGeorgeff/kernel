@@ -2,8 +2,8 @@
 
 namespace Georgeff\Kernel\DI;
 
-use Georgeff\Kernel\KernelException;
 use Psr\Container\ContainerInterface;
+use Georgeff\Kernel\Exception\KernelException;
 
 /**
  * @internal

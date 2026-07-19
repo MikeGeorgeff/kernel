@@ -3,9 +3,9 @@
 namespace Georgeff\Kernel\Module;
 
 use Georgeff\Kernel\Environment;
-use Georgeff\Kernel\KernelException;
 use Georgeff\Kernel\KernelInterface;
 use Psr\Container\ContainerInterface;
+use Georgeff\Kernel\Exception\KernelException;
 use Georgeff\Kernel\Debug\DebuggableInterface;
 
 /**

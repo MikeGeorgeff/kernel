@@ -5,6 +5,7 @@ namespace Georgeff\Kernel;
 use Psr\Container\ContainerInterface;
 use Georgeff\Kernel\DI\DefinitionInterface;
 use Georgeff\Kernel\Module\ModuleInterface;
+use Georgeff\Kernel\Exception\KernelException;
 use Georgeff\Kernel\Module\ModuleRepositoryInterface;
 use Georgeff\Kernel\Contract\ContainerBuilderInterface;
 

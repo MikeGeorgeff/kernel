@@ -1,6 +1,6 @@
 <?php
 
-namespace Georgeff\Kernel;
+namespace Georgeff\Kernel\Exception;
 
 use RuntimeException;
 

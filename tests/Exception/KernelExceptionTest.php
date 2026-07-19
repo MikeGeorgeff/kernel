@@ -1,8 +1,8 @@
 <?php
 
-namespace Georgeff\Kernel\Test;
+namespace Georgeff\Kernel\Test\Exception;
 
-use Georgeff\Kernel\KernelException;
+use Georgeff\Kernel\Exception\KernelException;
 use PHPUnit\Framework\TestCase;
 
 class KernelExceptionTest extends TestCase
