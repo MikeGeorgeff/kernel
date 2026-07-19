@@ -89,10 +89,10 @@ class Kernel implements KernelInterface
 
         $this->booting = true;
 
-        $this->profile('moduleLoad', function () {
-            $config = $this->modules->load($this->environment);
+        $config = [];
 
-            $this->definitions->add('kernel.config', fn() => $config)->share();
+        $this->profile('moduleLoad', function () use (&$config) {
+            $config = $this->modules->load($this->environment);
         });
 
         $this->profile('moduleRegistration', function () {
@@ -107,7 +107,7 @@ class Kernel implements KernelInterface
             $this->definitions->applyDecorators();
         });
 
-        $this->profile('serviceRegistration', function () {
+        $this->profile('serviceRegistration', function () use ($config) {
             $tags = [];
 
             foreach ($this->definitions->all() as $definition) {
@@ -124,6 +124,12 @@ class Kernel implements KernelInterface
             $this->builder->register(
                 DI\TagRegistryInterface::class,
                 fn(ContainerInterface $c) => new DI\TagRegistry($c, $tags),
+                true
+            );
+
+            $this->builder->register(
+                Config\ConfigInterface::class,
+                fn() => new Config\Config($config),
                 true
             );
         });

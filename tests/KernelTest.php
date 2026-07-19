@@ -2,6 +2,7 @@
 
 namespace Georgeff\Kernel\Test;
 
+use Georgeff\Kernel\Config\ConfigInterface;
 use Georgeff\Kernel\Contract\ContainerBuilderInterface;
 use Georgeff\Kernel\DI\DefinitionInterface;
 use Georgeff\Kernel\DI\TagRegistryInterface;
@@ -883,24 +884,37 @@ class KernelTest extends TestCase
     // kernel.config
     // -------------------------------------------------------------------------
 
-    public function test_kernel_config_is_available_in_container_after_boot(): void
+    public function test_config_is_available_in_container_after_boot(): void
     {
         $kernel = new Kernel(Environment::Testing);
         $kernel->boot();
 
-        $this->assertTrue($kernel->getContainer()->has('kernel.config'));
+        $this->assertTrue($kernel->getContainer()->has(ConfigInterface::class));
+        $this->assertInstanceOf(ConfigInterface::class, $kernel->getContainer()->get(ConfigInterface::class));
     }
 
-    public function test_kernel_config_is_empty_without_configurable_modules(): void
+    public function test_config_is_shared(): void
+    {
+        $kernel = new Kernel(Environment::Testing);
+        $kernel->boot();
+
+        $container = $kernel->getContainer();
+
+        $this->assertSame($container->get(ConfigInterface::class), $container->get(ConfigInterface::class));
+    }
+
+    public function test_config_has_no_module_keys_without_configurable_modules(): void
     {
         $kernel = new Kernel(Environment::Testing);
         $kernel->addModule($this->createStub(ModuleInterface::class));
         $kernel->boot();
 
-        $this->assertSame([], $kernel->getContainer()->get('kernel.config'));
+        $config = $kernel->getContainer()->get(ConfigInterface::class);
+
+        $this->assertFalse($config->has('db.host'));
     }
 
-    public function test_kernel_config_contains_merged_module_config(): void
+    public function test_config_contains_merged_module_config(): void
     {
         $module = new class implements ConfigurableModuleInterface {
             public function register(KernelInterface $kernel): void {}
@@ -914,10 +928,10 @@ class KernelTest extends TestCase
         $kernel->addModule($module);
         $kernel->boot();
 
-        $this->assertSame(
-            ['db.host' => 'localhost', 'cache.driver' => 'redis'],
-            $kernel->getContainer()->get('kernel.config'),
-        );
+        $config = $kernel->getContainer()->get(ConfigInterface::class);
+
+        $this->assertSame('localhost', $config->get('db.host'));
+        $this->assertSame('redis', $config->get('cache.driver'));
     }
 
     public function test_kernel_config_receives_kernel_environment(): void
