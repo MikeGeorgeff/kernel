@@ -8,7 +8,7 @@ jobs:
 
     strategy:
       matrix:
-        php: [php82, php83, php84, php85]
+        php: [php84, php85]
 
     steps:
       - uses: actions/checkout@v4
