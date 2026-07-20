@@ -607,6 +607,26 @@ class KernelTest extends TestCase
         $this->assertArrayHasKey('unresolved', $info['services']);
     }
 
+    public function test_get_debug_info_includes_service_resetter_info_alongside_service_resolution(): void
+    {
+        $kernel = new Kernel(new Testing(), debug: true);
+        $kernel->define('foo', fn() => 'bar')->share();
+        $kernel->boot();
+
+        $info = $kernel->getDebugInfo();
+
+        $this->assertArrayHasKey('service.resetter', $info);
+        $this->assertArrayHasKey('failures', $info['service.resetter']);
+        $this->assertArrayHasKey('logs', $info['service.resetter']);
+    }
+
+    public function test_get_debug_info_omits_service_resetter_before_boot(): void
+    {
+        $kernel = new Kernel(new Testing(), debug: true);
+
+        $this->assertArrayNotHasKey('service.resetter', $kernel->getDebugInfo());
+    }
+
     public function test_get_debug_info_tracks_resolved_services(): void
     {
         $kernel = new Kernel(new Testing(), debug: true);

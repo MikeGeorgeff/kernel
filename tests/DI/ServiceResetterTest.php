@@ -3,7 +3,9 @@
 namespace Georgeff\Kernel\Test\DI;
 
 use Georgeff\Kernel\Contract\ResettableInterface;
+use Georgeff\Kernel\Contract\ThresholdAwareResettableInterface;
 use Georgeff\Kernel\DI\ServiceResetter;
+use Georgeff\Kernel\Exception\ServiceResetException;
 use PHPUnit\Framework\TestCase;
 
 class ServiceResetterTest extends TestCase
@@ -108,5 +110,143 @@ class ServiceResetterTest extends TestCase
         $resetter->reset();
 
         $this->assertSame(1, $calls);
+    }
+
+    // -------------------------------------------------------------------------
+    // failure threshold — callsite $failureThreshold
+    // -------------------------------------------------------------------------
+
+    public function test_reset_does_not_throw_while_failures_stay_below_the_callsite_threshold(): void
+    {
+        $service = new class implements ResettableInterface {
+            public function reset(): void { throw new \RuntimeException('boom'); }
+        };
+
+        $resetter = new ServiceResetter();
+        $resetter->add('my.service', $service);
+
+        $resetter->reset(3);
+
+        $this->addToAssertionCount(1);
+    }
+
+    public function test_reset_throws_service_reset_exception_once_failures_reach_the_callsite_threshold(): void
+    {
+        $service = new class implements ResettableInterface {
+            public function reset(): void { throw new \RuntimeException('boom'); }
+        };
+
+        $resetter = new ServiceResetter();
+        $resetter->add('my.service', $service);
+
+        $this->expectException(ServiceResetException::class);
+
+        $resetter->reset(1);
+    }
+
+    public function test_reset_accumulates_failures_across_calls_until_the_callsite_threshold_is_reached(): void
+    {
+        $service = new class implements ResettableInterface {
+            public function reset(): void { throw new \RuntimeException('boom'); }
+        };
+
+        $resetter = new ServiceResetter();
+        $resetter->add('my.service', $service);
+
+        $resetter->reset(2);
+
+        $this->expectException(ServiceResetException::class);
+
+        $resetter->reset(2);
+    }
+
+    public function test_service_reset_exception_preserves_the_original_exception_as_previous(): void
+    {
+        $original = new \RuntimeException('boom');
+
+        $service = new class($original) implements ResettableInterface {
+            public function __construct(private \Throwable $exception) {}
+            public function reset(): void { throw $this->exception; }
+        };
+
+        $resetter = new ServiceResetter();
+        $resetter->add('my.service', $service);
+
+        try {
+            $resetter->reset(1);
+            $this->fail('Expected ServiceResetException was not thrown.');
+        } catch (ServiceResetException $e) {
+            $this->assertSame($original, $e->getPrevious());
+        }
+    }
+
+    public function test_reset_clears_a_service_failure_count_after_a_subsequent_successful_reset(): void
+    {
+        $shouldFail = true;
+
+        $service = new class($shouldFail) implements ResettableInterface {
+            public function __construct(private bool &$shouldFail) {}
+            public function reset(): void
+            {
+                if ($this->shouldFail) {
+                    throw new \RuntimeException('boom');
+                }
+            }
+        };
+
+        $resetter = new ServiceResetter();
+        $resetter->add('my.service', $service);
+
+        $resetter->reset(2);
+
+        $shouldFail = false;
+        $resetter->reset(2);
+
+        $this->assertSame([], $resetter->getDebugInfo()['failures']);
+
+        $shouldFail = true;
+        $resetter->reset(2);
+
+        $this->expectException(ServiceResetException::class);
+
+        $resetter->reset(2);
+    }
+
+    // -------------------------------------------------------------------------
+    // failure threshold — ThresholdAwareResettableInterface
+    // -------------------------------------------------------------------------
+
+    public function test_reset_uses_the_service_own_threshold_instead_of_the_callsite_default(): void
+    {
+        $service = new class implements ThresholdAwareResettableInterface {
+            public function reset(): void { throw new \RuntimeException('boom'); }
+            public function getFailureThreshold(): int { return 1; }
+        };
+
+        $resetter = new ServiceResetter();
+        $resetter->add('my.service', $service);
+
+        $this->expectException(ServiceResetException::class);
+
+        // Callsite default (3) would tolerate this failure; the service's own
+        // threshold of 1 should trip on the very first failure instead.
+        $resetter->reset();
+    }
+
+    public function test_reset_does_not_throw_while_a_threshold_aware_service_stays_below_its_own_threshold(): void
+    {
+        $service = new class implements ThresholdAwareResettableInterface {
+            public function reset(): void { throw new \RuntimeException('boom'); }
+            public function getFailureThreshold(): int { return 5; }
+        };
+
+        $resetter = new ServiceResetter();
+        $resetter->add('my.service', $service);
+
+        // Callsite default (3) would trip here; the service's own threshold
+        // of 5 should not.
+        $resetter->reset(1);
+
+        $this->addToAssertionCount(1);
     }
 }

@@ -163,8 +163,10 @@ interface KernelInterface extends Debug\DebuggableInterface
      * Reset resolved shared services to their original state
      *
      * @return static
+     *
+     * @throws KernelExceptionInterface
      */
-    public function resetServices(): static;
+    public function resetServices(int $failureThreshold = 3): static;
 
     /**
      * Add a module to the kernel
