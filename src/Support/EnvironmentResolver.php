@@ -38,7 +38,7 @@ final class EnvironmentResolver
     public function resolve(string $name): EnvironmentInterface
     {
         if (!isset($this->registry[$name])) {
-            throw new \InvalidArgumentException("Environment [$name] is not a registered enviornment");
+            throw new \InvalidArgumentException("Environment [$name] is not a registered environment");
         }
 
         $env = $this->registry[$name];

@@ -47,7 +47,7 @@ class EnvironmentResolverTest extends TestCase
         $resolver = new EnvironmentResolver();
 
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Environment [bogus] is not a registered enviornment');
+        $this->expectExceptionMessage('Environment [bogus] is not a registered environment');
 
         $resolver->resolve('bogus');
     }
