@@ -70,18 +70,8 @@ final class ModuleLoader implements DebuggableInterface
         $this->modules[$module::class] = $module;
 
         if ($module instanceof AggregateModuleInterface) {
-            $this->addAggregate($module);
+            $this->aggregates[$module::class] = $module;
         }
-    }
-
-    private function addAggregate(AggregateModuleInterface $module): void
-    {
-        KernelException::throwIf(
-            isset($this->aggregates[$module::class]),
-            sprintf('Aggregate module [%s] has already been added', $module::class)
-        );
-
-        $this->aggregates[$module::class] = $module;
     }
 
     /**
