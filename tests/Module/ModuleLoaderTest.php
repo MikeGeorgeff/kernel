@@ -8,9 +8,11 @@ use Georgeff\Kernel\Contract\ConfigurableModuleInterface;
 use Georgeff\Kernel\Contract\ModuleInterface;
 use Georgeff\Kernel\Environment;
 use Georgeff\Kernel\Exception\KernelException;
+use Georgeff\Kernel\Exception\ModuleException;
 use Georgeff\Kernel\KernelInterface;
 use Georgeff\Kernel\Module\ModuleLoader;
 use PHPUnit\Framework\TestCase;
+use Psr\Container\ContainerExceptionInterface;
 use Psr\Container\ContainerInterface;
 
 class ModuleLoaderTest extends TestCase
@@ -45,7 +47,7 @@ class ModuleLoaderTest extends TestCase
 
         $loader->add($module);
 
-        $this->expectException(KernelException::class);
+        $this->expectException(ModuleException::class);
         $this->expectExceptionMessage(sprintf('Module [%s] has already been added', $module::class));
 
         $loader->add(clone $module);
@@ -176,7 +178,7 @@ class ModuleLoaderTest extends TestCase
         $loader->add($module);
         $loader->add($aggregate);
 
-        $this->expectException(KernelException::class);
+        $this->expectException(ModuleException::class);
         $this->expectExceptionMessage(sprintf('Module [%s] has already been added', $module::class));
 
         $loader->load(Environment::Testing);
@@ -204,7 +206,7 @@ class ModuleLoaderTest extends TestCase
 
         $loader->add($a);
 
-        $this->expectException(KernelException::class);
+        $this->expectException(ModuleException::class);
         $this->expectExceptionMessage(sprintf('Module [%s] has already been added', $a::class));
 
         $loader->load(Environment::Testing);
@@ -398,6 +400,119 @@ class ModuleLoaderTest extends TestCase
         $this->expectExceptionMessage('Modules need to be loaded before they can be registered');
 
         $loader->register($kernel);
+    }
+
+    public function test_register_rethrows_kernel_exception_unchanged(): void
+    {
+        $loader = new ModuleLoader();
+        $kernel = $this->createStub(KernelInterface::class);
+
+        $module = new class implements ModuleInterface {
+            public function register(KernelInterface $kernel): void
+            {
+                throw new KernelException('boom');
+            }
+        };
+
+        $loader->add($module);
+        $loader->load(Environment::Testing);
+
+        $this->expectException(KernelException::class);
+        $this->expectExceptionMessage('boom');
+
+        $loader->register($kernel);
+    }
+
+    public function test_register_rethrows_module_exception_unchanged(): void
+    {
+        $loader = new ModuleLoader();
+        $kernel = $this->createStub(KernelInterface::class);
+
+        $module = new class implements ModuleInterface {
+            public function register(KernelInterface $kernel): void
+            {
+                throw new ModuleException('boom');
+            }
+        };
+
+        $loader->add($module);
+        $loader->load(Environment::Testing);
+
+        $this->expectException(ModuleException::class);
+        $this->expectExceptionMessage('boom');
+
+        $loader->register($kernel);
+    }
+
+    public function test_register_rethrows_container_exception_unchanged(): void
+    {
+        $loader = new ModuleLoader();
+        $kernel = $this->createStub(KernelInterface::class);
+
+        $containerException = new class('boom') extends \Exception implements ContainerExceptionInterface {};
+
+        $module = new class($containerException) implements ModuleInterface {
+            public function __construct(private \Throwable $exception) {}
+            public function register(KernelInterface $kernel): void
+            {
+                throw $this->exception;
+            }
+        };
+
+        $loader->add($module);
+        $loader->load(Environment::Testing);
+
+        $this->expectException(ContainerExceptionInterface::class);
+        $this->expectExceptionMessage('boom');
+
+        $loader->register($kernel);
+    }
+
+    public function test_register_wraps_unexpected_throwable_in_module_exception(): void
+    {
+        $loader = new ModuleLoader();
+        $kernel = $this->createStub(KernelInterface::class);
+
+        $module = new class implements ModuleInterface {
+            public function register(KernelInterface $kernel): void
+            {
+                throw new \RuntimeException('boom');
+            }
+        };
+
+        $loader->add($module);
+        $loader->load(Environment::Testing);
+
+        $this->expectException(ModuleException::class);
+        $this->expectExceptionMessage('Module registration error: boom');
+
+        $loader->register($kernel);
+    }
+
+    public function test_register_wrapped_exception_preserves_the_original_as_previous(): void
+    {
+        $loader = new ModuleLoader();
+        $kernel = $this->createStub(KernelInterface::class);
+
+        $original = new \RuntimeException('boom');
+
+        $module = new class($original) implements ModuleInterface {
+            public function __construct(private \Throwable $exception) {}
+            public function register(KernelInterface $kernel): void
+            {
+                throw $this->exception;
+            }
+        };
+
+        $loader->add($module);
+        $loader->load(Environment::Testing);
+
+        try {
+            $loader->register($kernel);
+            $this->fail('Expected ModuleException was not thrown');
+        } catch (ModuleException $e) {
+            $this->assertSame($original, $e->getPrevious());
+        }
     }
 
     // -------------------------------------------------------------------------

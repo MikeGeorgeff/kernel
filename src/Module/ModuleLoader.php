@@ -2,21 +2,21 @@
 
 namespace Georgeff\Kernel\Module;
 
+use Throwable;
 use Georgeff\Kernel\Environment;
 use Georgeff\Kernel\KernelInterface;
 use Psr\Container\ContainerInterface;
 use Georgeff\Kernel\Contract\ModuleInterface;
-use Georgeff\Kernel\Exception\KernelException;
+use Georgeff\Kernel\Exception\ModuleException;
 use Georgeff\Kernel\Debug\DebuggableInterface;
+use Psr\Container\ContainerExceptionInterface;
 use Georgeff\Kernel\Contract\BootableModuleInterface;
 use Georgeff\Kernel\Contract\AggregateModuleInterface;
+use Georgeff\Kernel\Exception\KernelExceptionInterface;
 use Georgeff\Kernel\Contract\ConfigurableModuleInterface;
 
 /**
  * @internal
- *
- * @todo create a ModuleException and throw in place of KernelException
- * @todo catch non KernelExceptions in register and rethrow ModuleException
  */
 final class ModuleLoader implements DebuggableInterface
 {
@@ -29,6 +29,11 @@ final class ModuleLoader implements DebuggableInterface
      * @var array<string, AggregateModuleInterface>
      */
     private array $aggregates = [];
+
+    /**
+     * @var class-string[]
+     */
+    private array $loadedModules = [];
 
     /**
      * @var array<string, mixed>
@@ -63,9 +68,10 @@ final class ModuleLoader implements DebuggableInterface
             throw new \LogicException('Cannot add modules after modules have been loaded');
         }
 
-        if (isset($this->modules[$module::class])) {
-            throw new KernelException(sprintf('Module [%s] has already been added', $module::class));
-        }
+        ModuleException::throwIf(
+            isset($this->modules[$module::class]),
+            sprintf('Module [%s] has already been added', $module::class)
+        );
 
         $this->modules[$module::class] = $module;
 
@@ -75,7 +81,7 @@ final class ModuleLoader implements DebuggableInterface
     }
 
     /**
-     * Flatten modules from repos, merge and return the config
+     * Flatten modules from aggregates, merge and return the config
      *
      * @return array<string, mixed>
      */
@@ -93,6 +99,8 @@ final class ModuleLoader implements DebuggableInterface
             if ($module instanceof ConfigurableModuleInterface) {
                 $config = array_merge($config, $module->config($env));
             }
+
+            $this->loadedModules[] = $module::class;
         }
 
         $this->loaded = true;
@@ -111,7 +119,13 @@ final class ModuleLoader implements DebuggableInterface
         }
 
         foreach ($this->modules as $module) {
-            $module->register($kernel);
+            try {
+                $module->register($kernel);
+            } catch (KernelExceptionInterface|ContainerExceptionInterface $e) {
+                throw $e;
+            } catch (Throwable $e) {
+                ModuleException::throwOnRegistrationError($e);
+            }
         }
 
         $this->registered = true;
@@ -160,7 +174,7 @@ final class ModuleLoader implements DebuggableInterface
             'loaded'     => $this->loaded,
             'registered' => $this->registered,
             'booted'     => $this->booted,
-            'modules'    => array_keys($this->modules),
+            'modules'    => $this->loadedModules,
         ];
     }
 }

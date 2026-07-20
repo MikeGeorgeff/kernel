@@ -12,6 +12,7 @@ use Georgeff\Kernel\DI\DefinitionInterface;
 use Georgeff\Kernel\DI\TagRegistryInterface;
 use Georgeff\Kernel\Environment;
 use Georgeff\Kernel\Exception\KernelException;
+use Georgeff\Kernel\Exception\ModuleException;
 use Georgeff\Kernel\Kernel;
 use Georgeff\Kernel\KernelInterface;
 use PHPUnit\Framework\TestCase;
@@ -710,7 +711,7 @@ class KernelTest extends TestCase
 
         $kernel->addModule($module);
 
-        $this->expectException(KernelException::class);
+        $this->expectException(ModuleException::class);
         $this->expectExceptionMessage(sprintf('Module [%s] has already been added', $module::class));
 
         $kernel->addModule(clone $module);
