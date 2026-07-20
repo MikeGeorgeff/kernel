@@ -3,6 +3,7 @@
 namespace Georgeff\Kernel\Support;
 
 use Georgeff\Kernel\Contract\EnvironmentInterface;
+use Georgeff\Kernel\Exception\EnvironmentException;
 
 final class EnvironmentResolver
 {
@@ -19,15 +20,17 @@ final class EnvironmentResolver
 
     /**
      * @param class-string<EnvironmentInterface> $class
+     *
+     * @throws EnvironmentException
      */
     public function register(string $name, string $class): self
     {
         if (!class_exists($class)) {
-            throw new \LogicException("Environment class [$class] was not found");
+            throw new EnvironmentException("Environment class [$class] was not found");
         }
 
         if (!is_subclass_of($class, EnvironmentInterface::class)) {
-            throw new \LogicException("Environment class [$class] must be an instance of " . EnvironmentInterface::class);
+            throw new EnvironmentException("Environment class [$class] must be an instance of " . EnvironmentInterface::class);
         }
 
         $this->registry[$name] = $class;
@@ -35,10 +38,13 @@ final class EnvironmentResolver
         return $this;
     }
 
+    /**
+     * @throws EnvironmentException
+     */
     public function resolve(string $name): EnvironmentInterface
     {
         if (!isset($this->registry[$name])) {
-            throw new \InvalidArgumentException("Environment [$name] is not a registered environment");
+            throw new EnvironmentException("Environment [$name] is not a registered environment");
         }
 
         $env = $this->registry[$name];

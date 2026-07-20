@@ -13,6 +13,13 @@ final class ModuleException extends \RuntimeException implements KernelException
         }
     }
 
+    public static function throwIfNot(bool $condition, string $message): void
+    {
+        if (!$condition) {
+            throw new self($message);
+        }
+    }
+
     public static function throwOnRegistrationError(string $module, Throwable $exception): never
     {
         throw new self(

@@ -8,6 +8,8 @@ use Georgeff\Kernel\Environment\Local;
 use Georgeff\Kernel\Environment\Production;
 use Georgeff\Kernel\Environment\Staging;
 use Georgeff\Kernel\Environment\Testing;
+use Georgeff\Kernel\Exception\EnvironmentException;
+use Georgeff\Kernel\Exception\KernelExceptionInterface;
 use Georgeff\Kernel\Support\EnvironmentResolver;
 use PHPUnit\Framework\TestCase;
 
@@ -46,7 +48,7 @@ class EnvironmentResolverTest extends TestCase
     {
         $resolver = new EnvironmentResolver();
 
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(EnvironmentException::class);
         $this->expectExceptionMessage('Environment [bogus] is not a registered environment');
 
         $resolver->resolve('bogus');
@@ -85,7 +87,7 @@ class EnvironmentResolverTest extends TestCase
     {
         $resolver = new EnvironmentResolver();
 
-        $this->expectException(\LogicException::class);
+        $this->expectException(EnvironmentException::class);
         $this->expectExceptionMessage('Environment class [Georgeff\Kernel\Test\Support\NonExistentClass] was not found');
 
         $resolver->register('custom', NonExistentClass::class);
@@ -95,7 +97,7 @@ class EnvironmentResolverTest extends TestCase
     {
         $resolver = new EnvironmentResolver();
 
-        $this->expectException(\LogicException::class);
+        $this->expectException(EnvironmentException::class);
         $this->expectExceptionMessage(sprintf(
             'Environment class [%s] must be an instance of %s',
             \stdClass::class,
@@ -103,6 +105,18 @@ class EnvironmentResolverTest extends TestCase
         ));
 
         $resolver->register('custom', \stdClass::class);
+    }
+
+    public function test_register_exception_implements_kernel_exception_interface(): void
+    {
+        $resolver = new EnvironmentResolver();
+
+        try {
+            $resolver->register('custom', NonExistentClass::class);
+            $this->fail('Expected EnvironmentException was not thrown.');
+        } catch (EnvironmentException $exception) {
+            $this->assertInstanceOf(KernelExceptionInterface::class, $exception);
+        }
     }
 
     // -------------------------------------------------------------------------

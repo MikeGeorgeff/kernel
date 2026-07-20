@@ -30,6 +30,21 @@ class ModuleExceptionTest extends TestCase
         $this->addToAssertionCount(1);
     }
 
+    public function test_throw_if_not_throws_when_condition_is_false(): void
+    {
+        $this->expectException(ModuleException::class);
+        $this->expectExceptionMessage('something went wrong');
+
+        ModuleException::throwIfNot(false, 'something went wrong');
+    }
+
+    public function test_throw_if_not_does_not_throw_when_condition_is_true(): void
+    {
+        ModuleException::throwIfNot(true, 'something went wrong');
+
+        $this->addToAssertionCount(1);
+    }
+
     // -------------------------------------------------------------------------
     // throwOnRegistrationError()
     // -------------------------------------------------------------------------

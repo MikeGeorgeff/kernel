@@ -63,7 +63,7 @@ class ModuleLoaderTest extends TestCase
 
         $loader->load(new Testing());
 
-        $this->expectException(\LogicException::class);
+        $this->expectException(ModuleException::class);
         $this->expectExceptionMessage('Cannot add modules after modules have been loaded');
 
         $loader->add($module);
@@ -401,7 +401,7 @@ class ModuleLoaderTest extends TestCase
         $loader = new ModuleLoader();
         $kernel = $this->createStub(KernelInterface::class);
 
-        $this->expectException(\LogicException::class);
+        $this->expectException(ModuleException::class);
         $this->expectExceptionMessage('Modules need to be loaded before they can be registered');
 
         $loader->register($kernel);
@@ -610,7 +610,7 @@ class ModuleLoaderTest extends TestCase
 
         $loader->load(new Testing());
 
-        $this->expectException(\LogicException::class);
+        $this->expectException(ModuleException::class);
         $this->expectExceptionMessage('Modules need to be registered before they can be booted');
 
         $loader->boot($container);

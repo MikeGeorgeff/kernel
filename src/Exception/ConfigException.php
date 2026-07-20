@@ -2,4 +2,4 @@
 
 namespace Georgeff\Kernel\Exception;
 
-final class ConfigException extends \InvalidArgumentException implements KernelExceptionInterface {}
+final class ConfigException extends \RuntimeException implements KernelExceptionInterface {}

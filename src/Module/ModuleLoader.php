@@ -64,9 +64,7 @@ final class ModuleLoader implements DebuggableInterface
 
     public function add(ModuleInterface $module): void
     {
-        if ($this->loaded) {
-            throw new \LogicException('Cannot add modules after modules have been loaded');
-        }
+        ModuleException::throwIf($this->loaded, 'Cannot add modules after modules have been loaded');
 
         ModuleException::throwIf(
             isset($this->modules[$module::class]),
@@ -114,9 +112,7 @@ final class ModuleLoader implements DebuggableInterface
             return;
         }
 
-        if (!$this->loaded) {
-            throw new \LogicException('Modules need to be loaded before they can be registered');
-        }
+        ModuleException::throwIfNot($this->loaded, 'Modules need to be loaded before they can be registered');
 
         foreach ($this->modules as $module) {
             try {
@@ -137,9 +133,7 @@ final class ModuleLoader implements DebuggableInterface
             return;
         }
 
-        if (!$this->registered) {
-            throw new \LogicException('Modules need to be registered before they can be booted');
-        }
+        ModuleException::throwIfNot($this->registered, 'Modules need to be registered before they can be booted');
 
         foreach ($this->modules as $module) {
             if ($module instanceof BootableModuleInterface) {
