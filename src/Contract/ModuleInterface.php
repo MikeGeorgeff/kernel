@@ -1,6 +1,6 @@
 <?php
 
-namespace Georgeff\Kernel\Module;
+namespace Georgeff\Kernel\Contract;
 
 use Georgeff\Kernel\KernelInterface;
 

@@ -4,9 +4,8 @@ namespace Georgeff\Kernel;
 
 use Psr\Container\ContainerInterface;
 use Georgeff\Kernel\DI\DefinitionInterface;
-use Georgeff\Kernel\Module\ModuleInterface;
+use Georgeff\Kernel\Contract\ModuleInterface;
 use Georgeff\Kernel\Exception\KernelException;
-use Georgeff\Kernel\Module\ModuleRepositoryInterface;
 use Georgeff\Kernel\Contract\ContainerBuilderInterface;
 
 class Kernel implements KernelInterface
@@ -196,6 +195,7 @@ class Kernel implements KernelInterface
 
         $this->profile('garbageCollection', function () {
             $this->definitions->gc();
+            $this->modules->gc();
 
             unset($this->cache['services.shared']);
         });
@@ -372,17 +372,6 @@ class Kernel implements KernelInterface
         KernelException::throwIf($this->isBooting(), 'Cannot add modules after the kernel has started booting');
 
         $this->modules->add($module);
-
-        return $this;
-    }
-
-    public function addRepository(ModuleRepositoryInterface $repository): static
-    {
-        KernelException::throwIf($this->isBooted(), 'Kernel has already been booted, cannot add new module repositories');
-
-        KernelException::throwIf($this->isBooting(), 'Cannot add module repository after the kernel has started booting');
-
-        $this->modules->addRepository($repository);
 
         return $this;
     }

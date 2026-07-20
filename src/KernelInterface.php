@@ -3,9 +3,8 @@
 namespace Georgeff\Kernel;
 
 use Psr\Container\ContainerInterface;
-use Georgeff\Kernel\Module\ModuleInterface;
 use Georgeff\Kernel\DI\DefinitionInterface;
-use Georgeff\Kernel\Module\ModuleRepositoryInterface;
+use Georgeff\Kernel\Contract\ModuleInterface;
 use Georgeff\Kernel\Exception\KernelExceptionInterface;
 
 interface KernelInterface extends Debug\DebuggableInterface
@@ -171,24 +170,13 @@ interface KernelInterface extends Debug\DebuggableInterface
     /**
      * Add a module to the kernel
      *
-     * @param \Georgeff\Kernel\Module\ModuleInterface $module
+     * @param \Georgeff\Kernel\Contract\ModuleInterface $module
      *
      * @return static
      *
      * @throws KernelExceptionInterface
      */
     public function addModule(ModuleInterface $module): static;
-
-    /**
-     * Add a module repository to the kernel
-     *
-     * @param \Georgeff\Kernel\Module\ModuleRepositoryInterface $repository
-     *
-     * @return static
-     *
-     * @throws KernelExceptionInterface
-     */
-    public function addRepository(ModuleRepositoryInterface $repository): static;
 
     /**
      * Get the container

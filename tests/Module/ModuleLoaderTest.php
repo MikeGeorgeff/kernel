@@ -2,14 +2,14 @@
 
 namespace Georgeff\Kernel\Test\Module;
 
+use Georgeff\Kernel\Contract\AggregateModuleInterface;
+use Georgeff\Kernel\Contract\BootableModuleInterface;
+use Georgeff\Kernel\Contract\ConfigurableModuleInterface;
+use Georgeff\Kernel\Contract\ModuleInterface;
 use Georgeff\Kernel\Environment;
 use Georgeff\Kernel\Exception\KernelException;
 use Georgeff\Kernel\KernelInterface;
-use Georgeff\Kernel\Module\BootableModuleInterface;
-use Georgeff\Kernel\Module\ConfigurableModuleInterface;
-use Georgeff\Kernel\Module\ModuleInterface;
 use Georgeff\Kernel\Module\ModuleLoader;
-use Georgeff\Kernel\Module\ModuleRepositoryInterface;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
 
@@ -46,7 +46,7 @@ class ModuleLoaderTest extends TestCase
         $loader->add($module);
 
         $this->expectException(KernelException::class);
-        $this->expectExceptionMessage(sprintf('Module "%s" has already been added', $module::class));
+        $this->expectExceptionMessage(sprintf('Module [%s] has already been added', $module::class));
 
         $loader->add(clone $module);
     }
@@ -65,10 +65,10 @@ class ModuleLoaderTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // addRepository()
+    // Aggregate modules
     // -------------------------------------------------------------------------
 
-    public function test_add_repository_flattens_modules_on_load(): void
+    public function test_aggregate_module_expands_its_modules_on_load(): void
     {
         $loader = new ModuleLoader();
         $kernel = $this->createStub(KernelInterface::class);
@@ -79,25 +79,46 @@ class ModuleLoaderTest extends TestCase
             public function register(KernelInterface $kernel): void { $this->registered = true; }
         };
 
-        $repo = new class($module) implements ModuleRepositoryInterface {
+        $aggregate = new class($module) implements AggregateModuleInterface {
             public function __construct(private ModuleInterface $module) {}
+            public function register(KernelInterface $kernel): void {}
             public function modules(Environment $env): array { return [$this->module]; }
         };
 
-        $loader->addRepository($repo);
+        $loader->add($aggregate);
         $loader->load(Environment::Testing);
         $loader->register($kernel);
 
         $this->assertTrue($registered);
     }
 
-    public function test_add_repository_passes_environment_to_modules(): void
+    public function test_aggregate_module_itself_is_registered(): void
+    {
+        $loader = new ModuleLoader();
+        $kernel = $this->createStub(KernelInterface::class);
+
+        $registered = false;
+        $aggregate = new class($registered) implements AggregateModuleInterface {
+            public function __construct(private bool &$registered) {}
+            public function register(KernelInterface $kernel): void { $this->registered = true; }
+            public function modules(Environment $env): array { return []; }
+        };
+
+        $loader->add($aggregate);
+        $loader->load(Environment::Testing);
+        $loader->register($kernel);
+
+        $this->assertTrue($registered);
+    }
+
+    public function test_aggregate_module_passes_environment_to_modules(): void
     {
         $loader = new ModuleLoader();
         $capturedEnv = null;
 
-        $repo = new class($capturedEnv) implements ModuleRepositoryInterface {
+        $aggregate = new class($capturedEnv) implements AggregateModuleInterface {
             public function __construct(private mixed &$capturedEnv) {}
+            public function register(KernelInterface $kernel): void {}
             public function modules(Environment $env): array
             {
                 $this->capturedEnv = $env;
@@ -105,80 +126,110 @@ class ModuleLoaderTest extends TestCase
             }
         };
 
-        $loader->addRepository($repo);
+        $loader->add($aggregate);
         $loader->load(Environment::Staging);
 
         $this->assertSame(Environment::Staging, $capturedEnv);
     }
 
-    public function test_add_repository_throws_on_duplicate_repository_class(): void
+    public function test_nested_aggregate_modules_are_expanded(): void
     {
         $loader = new ModuleLoader();
+        $kernel = $this->createStub(KernelInterface::class);
 
-        $repo = $this->createStub(ModuleRepositoryInterface::class);
+        $registered = false;
+        $leaf = new class($registered) implements ModuleInterface {
+            public function __construct(private bool &$registered) {}
+            public function register(KernelInterface $kernel): void { $this->registered = true; }
+        };
 
-        $loader->addRepository($repo);
+        $inner = new class($leaf) implements AggregateModuleInterface {
+            public function __construct(private ModuleInterface $leaf) {}
+            public function register(KernelInterface $kernel): void {}
+            public function modules(Environment $env): array { return [$this->leaf]; }
+        };
 
-        $this->expectException(KernelException::class);
-        $this->expectExceptionMessage(sprintf('Module repository "%s" has already been added', $repo::class));
+        $outer = new class($inner) implements AggregateModuleInterface {
+            public function __construct(private ModuleInterface $inner) {}
+            public function register(KernelInterface $kernel): void {}
+            public function modules(Environment $env): array { return [$this->inner]; }
+        };
 
-        $loader->addRepository(clone $repo);
+        $loader->add($outer);
+        $loader->load(Environment::Testing);
+        $loader->register($kernel);
+
+        $this->assertTrue($registered);
     }
 
-    public function test_repository_throws_if_module_already_directly_added(): void
+    public function test_aggregate_throws_if_returned_module_already_directly_added(): void
     {
         $loader = new ModuleLoader();
         $module = $this->createStub(ModuleInterface::class);
 
-        $repo = new class($module) implements ModuleRepositoryInterface {
+        $aggregate = new class($module) implements AggregateModuleInterface {
             public function __construct(private ModuleInterface $module) {}
+            public function register(KernelInterface $kernel): void {}
             public function modules(Environment $env): array { return [$this->module]; }
         };
 
         $loader->add($module);
-        $loader->addRepository($repo);
+        $loader->add($aggregate);
 
         $this->expectException(KernelException::class);
-        $this->expectExceptionMessage(sprintf('Module "%s" has already been added', $module::class));
+        $this->expectExceptionMessage(sprintf('Module [%s] has already been added', $module::class));
 
         $loader->load(Environment::Testing);
     }
 
-    public function test_repository_throws_if_two_repos_return_same_module_class(): void
+    public function test_aggregate_cycle_throws_on_the_repeated_module(): void
     {
         $loader = new ModuleLoader();
-        $module = $this->createStub(ModuleInterface::class);
 
-        $repoA = new class($module) implements ModuleRepositoryInterface {
+        // $a and $b return each other, forming a cycle; add()'s duplicate-class
+        // guard is what stops expansion from recursing forever.
+        $a = new class implements AggregateModuleInterface {
+            public ?AggregateModuleInterface $other = null;
+            public function register(KernelInterface $kernel): void {}
+            public function modules(Environment $env): array { return [$this->other]; }
+        };
+
+        $b = new class($a) implements AggregateModuleInterface {
+            public function __construct(private AggregateModuleInterface $other) {}
+            public function register(KernelInterface $kernel): void {}
+            public function modules(Environment $env): array { return [$this->other]; }
+        };
+
+        $a->other = $b;
+
+        $loader->add($a);
+
+        $this->expectException(KernelException::class);
+        $this->expectExceptionMessage(sprintf('Module [%s] has already been added', $a::class));
+
+        $loader->load(Environment::Testing);
+    }
+
+    public function test_aggregate_modules_contribute_config(): void
+    {
+        $loader = new ModuleLoader();
+
+        $configurable = new class implements ConfigurableModuleInterface {
+            public function register(KernelInterface $kernel): void {}
+            public function config(Environment $env): array { return ['db.host' => 'localhost']; }
+        };
+
+        $aggregate = new class($configurable) implements AggregateModuleInterface {
             public function __construct(private ModuleInterface $module) {}
+            public function register(KernelInterface $kernel): void {}
             public function modules(Environment $env): array { return [$this->module]; }
         };
 
-        $repoB = new class($module) implements ModuleRepositoryInterface {
-            public function __construct(private ModuleInterface $module) {}
-            public function modules(Environment $env): array { return [clone $this->module]; }
-        };
+        $loader->add($aggregate);
 
-        $loader->addRepository($repoA);
-        $loader->addRepository($repoB);
+        $config = $loader->load(Environment::Testing);
 
-        $this->expectException(KernelException::class);
-        $this->expectExceptionMessage(sprintf('Module "%s" has already been added', $module::class));
-
-        $loader->load(Environment::Testing);
-    }
-
-    public function test_add_repository_throws_after_load(): void
-    {
-        $loader = new ModuleLoader();
-        $repo = $this->createStub(ModuleRepositoryInterface::class);
-
-        $loader->load(Environment::Testing);
-
-        $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage('Cannot add module repositories after modules have been loaded');
-
-        $loader->addRepository($repo);
+        $this->assertSame(['db.host' => 'localhost'], $config);
     }
 
     // -------------------------------------------------------------------------

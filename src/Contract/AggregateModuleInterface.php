@@ -1,14 +1,12 @@
 <?php
 
-namespace Georgeff\Kernel\Module;
+namespace Georgeff\Kernel\Contract;
 
 use Georgeff\Kernel\Environment;
 
-interface ModuleRepositoryInterface
+interface AggregateModuleInterface extends ModuleInterface
 {
     /**
-     * Add multiple modules to the kernel
-     *
      * @return ModuleInterface[]
      */
     public function modules(Environment $env): array;

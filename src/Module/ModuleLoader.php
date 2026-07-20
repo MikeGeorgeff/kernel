@@ -5,11 +5,18 @@ namespace Georgeff\Kernel\Module;
 use Georgeff\Kernel\Environment;
 use Georgeff\Kernel\KernelInterface;
 use Psr\Container\ContainerInterface;
+use Georgeff\Kernel\Contract\ModuleInterface;
 use Georgeff\Kernel\Exception\KernelException;
 use Georgeff\Kernel\Debug\DebuggableInterface;
+use Georgeff\Kernel\Contract\BootableModuleInterface;
+use Georgeff\Kernel\Contract\AggregateModuleInterface;
+use Georgeff\Kernel\Contract\ConfigurableModuleInterface;
 
 /**
  * @internal
+ *
+ * @todo create a ModuleException and throw in place of KernelException
+ * @todo catch non KernelExceptions in register and rethrow ModuleException
  */
 final class ModuleLoader implements DebuggableInterface
 {
@@ -19,9 +26,9 @@ final class ModuleLoader implements DebuggableInterface
     private array $modules = [];
 
     /**
-     * @var array<string, ModuleRepositoryInterface>
+     * @var array<string, AggregateModuleInterface>
      */
-    private array $repositories = [];
+    private array $aggregates = [];
 
     /**
      * @var array<string, mixed>
@@ -43,6 +50,13 @@ final class ModuleLoader implements DebuggableInterface
      */
     private bool $booted = false;
 
+    public function gc(): void
+    {
+        $this->modules    = [];
+        $this->aggregates = [];
+        $this->config     = [];
+    }
+
     public function add(ModuleInterface $module): void
     {
         if ($this->loaded) {
@@ -50,23 +64,24 @@ final class ModuleLoader implements DebuggableInterface
         }
 
         if (isset($this->modules[$module::class])) {
-            throw new KernelException(sprintf('Module "%s" has already been added', $module::class));
+            throw new KernelException(sprintf('Module [%s] has already been added', $module::class));
         }
 
         $this->modules[$module::class] = $module;
+
+        if ($module instanceof AggregateModuleInterface) {
+            $this->addAggregate($module);
+        }
     }
 
-    public function addRepository(ModuleRepositoryInterface $repository): void
+    private function addAggregate(AggregateModuleInterface $module): void
     {
-        if ($this->loaded) {
-            throw new \LogicException('Cannot add module repositories after modules have been loaded');
-        }
+        KernelException::throwIf(
+            isset($this->aggregates[$module::class]),
+            sprintf('Aggregate module [%s] has already been added', $module::class)
+        );
 
-        if (isset($this->repositories[$repository::class])) {
-            throw new KernelException(sprintf('Module repository "%s" has already been added', $repository::class));
-        }
-
-        $this->repositories[$repository::class] = $repository;
+        $this->aggregates[$module::class] = $module;
     }
 
     /**
@@ -82,7 +97,7 @@ final class ModuleLoader implements DebuggableInterface
 
         $config = [];
 
-        $this->loadModulesFromRepositories($env);
+        $this->expandAggregates($env);
 
         foreach ($this->modules as $module) {
             if ($module instanceof ConfigurableModuleInterface) {
@@ -131,15 +146,22 @@ final class ModuleLoader implements DebuggableInterface
         $this->booted = true;
     }
 
-    private function loadModulesFromRepositories(Environment $env): void
+    private function expandAggregates(Environment $env): void
     {
-        foreach ($this->repositories as $repo) {
-            foreach ($repo->modules($env) as $module) {
-                $this->add($module);
+        foreach ($this->aggregates as $aggregate) {
+            $this->expandAggregate($aggregate, $env);
+        }
+    }
+
+    private function expandAggregate(AggregateModuleInterface $aggregate, Environment $env): void
+    {
+        foreach ($aggregate->modules($env) as $module) {
+            $this->add($module);
+
+            if ($module instanceof AggregateModuleInterface) {
+                $this->expandAggregate($module, $env);
             }
         }
-
-        $this->repositories = [];
     }
 
     public function getDebugInfo(): array

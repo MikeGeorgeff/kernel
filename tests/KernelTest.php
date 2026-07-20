@@ -3,17 +3,17 @@
 namespace Georgeff\Kernel\Test;
 
 use Georgeff\Kernel\Config\ConfigInterface;
+use Georgeff\Kernel\Contract\AggregateModuleInterface;
+use Georgeff\Kernel\Contract\BootableModuleInterface;
+use Georgeff\Kernel\Contract\ConfigurableModuleInterface;
 use Georgeff\Kernel\Contract\ContainerBuilderInterface;
+use Georgeff\Kernel\Contract\ModuleInterface;
 use Georgeff\Kernel\DI\DefinitionInterface;
 use Georgeff\Kernel\DI\TagRegistryInterface;
 use Georgeff\Kernel\Environment;
 use Georgeff\Kernel\Exception\KernelException;
 use Georgeff\Kernel\Kernel;
 use Georgeff\Kernel\KernelInterface;
-use Georgeff\Kernel\Module\BootableModuleInterface;
-use Georgeff\Kernel\Module\ConfigurableModuleInterface;
-use Georgeff\Kernel\Module\ModuleInterface;
-use Georgeff\Kernel\Module\ModuleRepositoryInterface;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
 
@@ -711,72 +711,9 @@ class KernelTest extends TestCase
         $kernel->addModule($module);
 
         $this->expectException(KernelException::class);
-        $this->expectExceptionMessage(sprintf('Module "%s" has already been added', $module::class));
+        $this->expectExceptionMessage(sprintf('Module [%s] has already been added', $module::class));
 
         $kernel->addModule(clone $module);
-    }
-
-    // -------------------------------------------------------------------------
-    // addRepository()
-    // -------------------------------------------------------------------------
-
-    public function test_add_repository_returns_the_kernel(): void
-    {
-        $kernel = new Kernel(Environment::Testing);
-        $repo   = $this->createStub(ModuleRepositoryInterface::class);
-
-        $result = $kernel->addRepository($repo);
-
-        $this->assertSame($kernel, $result);
-    }
-
-    public function test_add_repository_throws_after_boot(): void
-    {
-        $kernel = new Kernel(Environment::Testing);
-        $kernel->boot();
-
-        $this->expectException(KernelException::class);
-        $this->expectExceptionMessage('Kernel has already been booted, cannot add new module repositories');
-
-        $kernel->addRepository($this->createStub(ModuleRepositoryInterface::class));
-    }
-
-    public function test_add_repository_throws_when_booting(): void
-    {
-        $kernel = new Kernel(Environment::Testing);
-        $stub   = $this->createStub(ModuleRepositoryInterface::class);
-
-        $module = new class($kernel, $stub) implements ModuleInterface {
-            public function __construct(
-                private KernelInterface $kernel,
-                private ModuleRepositoryInterface $stub,
-            ) {}
-
-            public function register(KernelInterface $kernel): void
-            {
-                $this->kernel->addRepository($this->stub);
-            }
-        };
-
-        $kernel->addModule($module);
-
-        $this->expectException(KernelException::class);
-        $this->expectExceptionMessage('Cannot add module repository after the kernel has started booting');
-
-        $kernel->boot();
-    }
-
-    public function test_add_repository_throws_on_duplicate(): void
-    {
-        $kernel = new Kernel(Environment::Testing);
-        $repo   = $this->createStub(ModuleRepositoryInterface::class);
-
-        $kernel->addRepository($repo);
-
-        $this->expectException(KernelException::class);
-        $this->expectExceptionMessage(sprintf('Module repository "%s" has already been added', $repo::class));
-
-        $kernel->addRepository(clone $repo);
     }
 
     // -------------------------------------------------------------------------
@@ -839,7 +776,7 @@ class KernelTest extends TestCase
         $this->assertSame($kernel->getContainer(), $receivedContainer);
     }
 
-    public function test_repository_modules_are_registered_during_boot(): void
+    public function test_aggregate_module_modules_are_registered_during_boot(): void
     {
         $registered = false;
 
@@ -848,24 +785,26 @@ class KernelTest extends TestCase
             public function register(KernelInterface $kernel): void { $this->registered = true; }
         };
 
-        $repo = new class($module) implements ModuleRepositoryInterface {
+        $aggregate = new class($module) implements AggregateModuleInterface {
             public function __construct(private ModuleInterface $module) {}
+            public function register(KernelInterface $kernel): void {}
             public function modules(Environment $env): array { return [$this->module]; }
         };
 
         $kernel = new Kernel(Environment::Testing);
-        $kernel->addRepository($repo);
+        $kernel->addModule($aggregate);
         $kernel->boot();
 
         $this->assertTrue($registered);
     }
 
-    public function test_repository_receives_kernel_environment(): void
+    public function test_aggregate_module_receives_kernel_environment(): void
     {
         $receivedEnv = null;
 
-        $repo = new class($receivedEnv) implements ModuleRepositoryInterface {
+        $aggregate = new class($receivedEnv) implements AggregateModuleInterface {
             public function __construct(private mixed &$receivedEnv) {}
+            public function register(KernelInterface $kernel): void {}
             public function modules(Environment $env): array
             {
                 $this->receivedEnv = $env;
@@ -874,7 +813,7 @@ class KernelTest extends TestCase
         };
 
         $kernel = new Kernel(Environment::Production);
-        $kernel->addRepository($repo);
+        $kernel->addModule($aggregate);
         $kernel->boot();
 
         $this->assertSame(Environment::Production, $receivedEnv);
