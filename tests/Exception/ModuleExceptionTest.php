@@ -30,18 +30,22 @@ class ModuleExceptionTest extends TestCase
         $this->addToAssertionCount(1);
     }
 
+    // -------------------------------------------------------------------------
+    // throwOnRegistrationError()
+    // -------------------------------------------------------------------------
+
     public function test_throw_on_registration_error_throws_a_module_exception(): void
     {
         $this->expectException(ModuleException::class);
 
-        ModuleException::throwOnRegistrationError(new \RuntimeException('boom'));
+        ModuleException::throwOnRegistrationError('MyModule', new \RuntimeException('boom'));
     }
 
-    public function test_throw_on_registration_error_message_includes_the_original_message(): void
+    public function test_throw_on_registration_error_message_includes_the_module_and_original_message(): void
     {
-        $this->expectExceptionMessage('Module registration error: boom');
+        $this->expectExceptionMessage('Failed to register module [MyModule]: boom');
 
-        ModuleException::throwOnRegistrationError(new \RuntimeException('boom'));
+        ModuleException::throwOnRegistrationError('MyModule', new \RuntimeException('boom'));
     }
 
     public function test_throw_on_registration_error_preserves_the_original_exception_as_previous(): void
@@ -49,7 +53,37 @@ class ModuleExceptionTest extends TestCase
         $original = new \RuntimeException('boom');
 
         try {
-            ModuleException::throwOnRegistrationError($original);
+            ModuleException::throwOnRegistrationError('MyModule', $original);
+            $this->fail('Expected ModuleException was not thrown');
+        } catch (ModuleException $e) {
+            $this->assertSame($original, $e->getPrevious());
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // throwOnBootError()
+    // -------------------------------------------------------------------------
+
+    public function test_throw_on_boot_error_throws_a_module_exception(): void
+    {
+        $this->expectException(ModuleException::class);
+
+        ModuleException::throwOnBootError('MyModule', new \RuntimeException('boom'));
+    }
+
+    public function test_throw_on_boot_error_message_includes_the_module_and_original_message(): void
+    {
+        $this->expectExceptionMessage('Failed to boot module [MyModule]: boom');
+
+        ModuleException::throwOnBootError('MyModule', new \RuntimeException('boom'));
+    }
+
+    public function test_throw_on_boot_error_preserves_the_original_exception_as_previous(): void
+    {
+        $original = new \RuntimeException('boom');
+
+        try {
+            ModuleException::throwOnBootError('MyModule', $original);
             $this->fail('Expected ModuleException was not thrown');
         } catch (ModuleException $e) {
             $this->assertSame($original, $e->getPrevious());

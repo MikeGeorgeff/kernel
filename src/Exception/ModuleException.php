@@ -13,10 +13,18 @@ final class ModuleException extends \RuntimeException implements KernelException
         }
     }
 
-    public static function throwOnRegistrationError(Throwable $exception): never
+    public static function throwOnRegistrationError(string $module, Throwable $exception): never
     {
         throw new self(
-            'Module registration error: ' . $exception->getMessage(),
+            "Failed to register module [$module]: {$exception->getMessage()}",
+            previous: $exception
+        );
+    }
+
+    public static function throwOnBootError(string $module, Throwable $exception): never
+    {
+        throw new self(
+            "Failed to boot module [$module]: {$exception->getMessage()}",
             previous: $exception
         );
     }

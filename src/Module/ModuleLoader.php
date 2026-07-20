@@ -124,7 +124,7 @@ final class ModuleLoader implements DebuggableInterface
             } catch (KernelExceptionInterface|ContainerExceptionInterface $e) {
                 throw $e;
             } catch (Throwable $e) {
-                ModuleException::throwOnRegistrationError($e);
+                ModuleException::throwOnRegistrationError($module::class, $e);
             }
         }
 
@@ -143,7 +143,13 @@ final class ModuleLoader implements DebuggableInterface
 
         foreach ($this->modules as $module) {
             if ($module instanceof BootableModuleInterface) {
-                $module->boot($container);
+                try {
+                    $module->boot($container);
+                } catch (KernelExceptionInterface|ContainerExceptionInterface $e) {
+                    throw $e;
+                } catch (Throwable $e) {
+                    ModuleException::throwOnBootError($module::class, $e);
+                }
             }
         }
 

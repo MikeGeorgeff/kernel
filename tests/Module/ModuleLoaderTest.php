@@ -484,7 +484,7 @@ class ModuleLoaderTest extends TestCase
         $loader->load(Environment::Testing);
 
         $this->expectException(ModuleException::class);
-        $this->expectExceptionMessage('Module registration error: boom');
+        $this->expectExceptionMessage(sprintf('Failed to register module [%s]: boom', $module::class));
 
         $loader->register($kernel);
     }
@@ -609,6 +609,134 @@ class ModuleLoaderTest extends TestCase
         $this->expectExceptionMessage('Modules need to be registered before they can be booted');
 
         $loader->boot($container);
+    }
+
+    public function test_boot_rethrows_kernel_exception_unchanged(): void
+    {
+        $loader = new ModuleLoader();
+        $kernel = $this->createStub(KernelInterface::class);
+        $container = $this->createStub(ContainerInterface::class);
+
+        $module = new class implements BootableModuleInterface {
+            public function register(KernelInterface $kernel): void {}
+            public function boot(ContainerInterface $container): void
+            {
+                throw new KernelException('boom');
+            }
+        };
+
+        $loader->add($module);
+        $loader->load(Environment::Testing);
+        $loader->register($kernel);
+
+        $this->expectException(KernelException::class);
+        $this->expectExceptionMessage('boom');
+
+        $loader->boot($container);
+    }
+
+    public function test_boot_rethrows_module_exception_unchanged(): void
+    {
+        $loader = new ModuleLoader();
+        $kernel = $this->createStub(KernelInterface::class);
+        $container = $this->createStub(ContainerInterface::class);
+
+        $module = new class implements BootableModuleInterface {
+            public function register(KernelInterface $kernel): void {}
+            public function boot(ContainerInterface $container): void
+            {
+                throw new ModuleException('boom');
+            }
+        };
+
+        $loader->add($module);
+        $loader->load(Environment::Testing);
+        $loader->register($kernel);
+
+        $this->expectException(ModuleException::class);
+        $this->expectExceptionMessage('boom');
+
+        $loader->boot($container);
+    }
+
+    public function test_boot_rethrows_container_exception_unchanged(): void
+    {
+        $loader = new ModuleLoader();
+        $kernel = $this->createStub(KernelInterface::class);
+        $container = $this->createStub(ContainerInterface::class);
+
+        $containerException = new class('boom') extends \Exception implements ContainerExceptionInterface {};
+
+        $module = new class($containerException) implements BootableModuleInterface {
+            public function __construct(private \Throwable $exception) {}
+            public function register(KernelInterface $kernel): void {}
+            public function boot(ContainerInterface $container): void
+            {
+                throw $this->exception;
+            }
+        };
+
+        $loader->add($module);
+        $loader->load(Environment::Testing);
+        $loader->register($kernel);
+
+        $this->expectException(ContainerExceptionInterface::class);
+        $this->expectExceptionMessage('boom');
+
+        $loader->boot($container);
+    }
+
+    public function test_boot_wraps_unexpected_throwable_in_module_exception(): void
+    {
+        $loader = new ModuleLoader();
+        $kernel = $this->createStub(KernelInterface::class);
+        $container = $this->createStub(ContainerInterface::class);
+
+        $module = new class implements BootableModuleInterface {
+            public function register(KernelInterface $kernel): void {}
+            public function boot(ContainerInterface $container): void
+            {
+                throw new \RuntimeException('boom');
+            }
+        };
+
+        $loader->add($module);
+        $loader->load(Environment::Testing);
+        $loader->register($kernel);
+
+        $this->expectException(ModuleException::class);
+        $this->expectExceptionMessage(sprintf('Failed to boot module [%s]: boom', $module::class));
+
+        $loader->boot($container);
+    }
+
+    public function test_boot_wrapped_exception_preserves_the_original_as_previous(): void
+    {
+        $loader = new ModuleLoader();
+        $kernel = $this->createStub(KernelInterface::class);
+        $container = $this->createStub(ContainerInterface::class);
+
+        $original = new \RuntimeException('boom');
+
+        $module = new class($original) implements BootableModuleInterface {
+            public function __construct(private \Throwable $exception) {}
+            public function register(KernelInterface $kernel): void {}
+            public function boot(ContainerInterface $container): void
+            {
+                throw $this->exception;
+            }
+        };
+
+        $loader->add($module);
+        $loader->load(Environment::Testing);
+        $loader->register($kernel);
+
+        try {
+            $loader->boot($container);
+            $this->fail('Expected ModuleException was not thrown');
+        } catch (ModuleException $e) {
+            $this->assertSame($original, $e->getPrevious());
+        }
     }
 
     // -------------------------------------------------------------------------
