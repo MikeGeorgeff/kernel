@@ -249,4 +249,41 @@ class ServiceResetterTest extends TestCase
 
         $this->addToAssertionCount(1);
     }
+
+    // -------------------------------------------------------------------------
+    // failure tracking key — id, not class
+    // -------------------------------------------------------------------------
+
+    public function test_failure_tracking_is_isolated_per_id_even_when_the_same_class_backs_multiple_ids(): void
+    {
+        $healthy = new ToggleableResettable();
+
+        $failing = new ToggleableResettable();
+        $failing->shouldFail = true;
+
+        $resetter = new ServiceResetter();
+        // Added in this order so, after reset()'s internal array_reverse(),
+        // the failing instance resets first and the healthy instance
+        // (same class, different id) resets second — if failure tracking
+        // were still keyed by class instead of id, the healthy instance's
+        // successful reset would clear the failing instance's failure count.
+        $resetter->add('service.healthy', $healthy);
+        $resetter->add('service.failing', $failing);
+
+        $resetter->reset(3);
+
+        $this->assertSame(['service.failing' => 1], $resetter->getDebugInfo()['failures']);
+    }
+}
+
+final class ToggleableResettable implements ResettableInterface
+{
+    public bool $shouldFail = false;
+
+    public function reset(): void
+    {
+        if ($this->shouldFail) {
+            throw new \RuntimeException('boom');
+        }
+    }
 }

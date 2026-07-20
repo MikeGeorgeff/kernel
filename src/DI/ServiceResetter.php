@@ -19,19 +19,19 @@ final class ServiceResetter implements DebuggableInterface
     private array $services = [];
 
     /**
-     * @var array<class-string<ResettableInterface>, int>
+     * @var array<string, int>
      */
     private array $failures = [];
 
     /**
-     * @var array<class-string<ResettableInterface>, array<class-string<Throwable>, string[]>>
+     * @var array<string, array<class-string<Throwable>, string[]>>
      */
     private array $logs = [];
 
     /**
      * @return array{
-     *      failures: array<class-string<ResettableInterface>, int>,
-     *      logs: array<class-string<ResettableInterface>, array<class-string<Throwable>, string[]>>
+     *      failures: array<string, int>,
+     *      logs: array<string, array<class-string<Throwable>, string[]>>
      * }
      */
     public function getDebugInfo(): array
@@ -52,63 +52,51 @@ final class ServiceResetter implements DebuggableInterface
      */
     public function reset(int $failureThreshold = 3): void
     {
-        foreach (array_reverse($this->services, true) as $service) {
+        foreach (array_reverse($this->services, true) as $id => $service) {
             try {
                 $service->reset();
 
-                $this->clearServiceFailures($service::class);
+                $this->clearServiceFailures($id);
             } catch (Throwable $e) {
                 $threshold = $service instanceof ThresholdAwareResettableInterface
                     ? $service->getFailureThreshold()
                     : $failureThreshold;
 
-                $this->logFailure($service::class, $e);
+                $this->logFailure($id, $e);
 
-                if ($this->shouldFail($service::class, $threshold)) {
-                    ServiceResetException::fail($service::class, $e);
+                if ($this->shouldFail($id, $threshold)) {
+                    ServiceResetException::fail($id, $e);
                 }
             }
         }
     }
 
-    /**
-     * @param class-string<ResettableInterface> $service
-     */
-    private function shouldFail(string $service, int $threshold): bool
+    private function shouldFail(string $id, int $threshold): bool
     {
-        $failures = $this->getFailures($service);
+        $failures = $this->getFailures($id);
 
         return $failures >= $threshold;
     }
 
-    /**
-     * @param class-string<ResettableInterface> $service
-     */
-    private function logFailure(string $service, Throwable $e): void
+    private function logFailure(string $id, Throwable $e): void
     {
-        $failures = $this->getFailures($service);
+        $failures = $this->getFailures($id);
 
-        $this->failures[$service] = $failures + 1;
+        $this->failures[$id] = $failures + 1;
 
-        $this->logs[$service][$e::class][] = $e->getMessage();
+        $this->logs[$id][$e::class][] = $e->getMessage();
     }
 
-    /**
-     * @param class-string<ResettableInterface> $service
-     */
-    private function getFailures(string $service): int
+    private function getFailures(string $id): int
     {
-        return $this->failures[$service] ?? 0;
+        return $this->failures[$id] ?? 0;
     }
 
-    /**
-     * @param class-string<ResettableInterface> $service
-     */
-    private function clearServiceFailures(string $service): void
+    private function clearServiceFailures(string $id): void
     {
-        if (isset($this->failures[$service])) {
-            unset($this->failures[$service]);
-            unset($this->logs[$service]);
+        if (isset($this->failures[$id])) {
+            unset($this->failures[$id]);
+            unset($this->logs[$id]);
         }
     }
 }
