@@ -5,6 +5,7 @@ namespace Georgeff\Kernel;
 use Psr\Container\ContainerInterface;
 use Georgeff\Kernel\DI\DefinitionInterface;
 use Georgeff\Kernel\Contract\ModuleInterface;
+use Georgeff\Kernel\Contract\EnvironmentInterface;
 use Georgeff\Kernel\Exception\KernelExceptionInterface;
 
 interface KernelInterface extends Debug\DebuggableInterface
@@ -46,10 +47,8 @@ interface KernelInterface extends Debug\DebuggableInterface
 
     /**
      * Get the kernel environment
-     *
-     * @return string
      */
-    public function getEnvironment(): string;
+    public function getEnvironment(): EnvironmentInterface;
 
     /**
      * Indicates if debug is enabled

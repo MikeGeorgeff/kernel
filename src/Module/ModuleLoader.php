@@ -3,13 +3,13 @@
 namespace Georgeff\Kernel\Module;
 
 use Throwable;
-use Georgeff\Kernel\Environment;
 use Georgeff\Kernel\KernelInterface;
 use Psr\Container\ContainerInterface;
 use Georgeff\Kernel\Contract\ModuleInterface;
 use Georgeff\Kernel\Exception\ModuleException;
 use Georgeff\Kernel\Debug\DebuggableInterface;
 use Psr\Container\ContainerExceptionInterface;
+use Georgeff\Kernel\Contract\EnvironmentInterface;
 use Georgeff\Kernel\Contract\BootableModuleInterface;
 use Georgeff\Kernel\Contract\AggregateModuleInterface;
 use Georgeff\Kernel\Exception\KernelExceptionInterface;
@@ -85,7 +85,7 @@ final class ModuleLoader implements DebuggableInterface
      *
      * @return array<string, mixed>
      */
-    public function load(Environment $env): array
+    public function load(EnvironmentInterface $env): array
     {
         if ($this->loaded) {
             return $this->config;
@@ -156,14 +156,14 @@ final class ModuleLoader implements DebuggableInterface
         $this->booted = true;
     }
 
-    private function expandAggregates(Environment $env): void
+    private function expandAggregates(EnvironmentInterface $env): void
     {
         foreach ($this->aggregates as $aggregate) {
             $this->expandAggregate($aggregate, $env);
         }
     }
 
-    private function expandAggregate(AggregateModuleInterface $aggregate, Environment $env): void
+    private function expandAggregate(AggregateModuleInterface $aggregate, EnvironmentInterface $env): void
     {
         foreach ($aggregate->modules($env) as $module) {
             $this->add($module);

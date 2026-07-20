@@ -6,6 +6,7 @@ use Psr\Container\ContainerInterface;
 use Georgeff\Kernel\DI\DefinitionInterface;
 use Georgeff\Kernel\Contract\ModuleInterface;
 use Georgeff\Kernel\Exception\KernelException;
+use Georgeff\Kernel\Contract\EnvironmentInterface;
 use Georgeff\Kernel\Contract\ContainerBuilderInterface;
 
 class Kernel implements KernelInterface
@@ -28,7 +29,7 @@ class Kernel implements KernelInterface
 
     private ?ContainerInterface $container = null;
 
-    private Environment $environment;
+    private EnvironmentInterface $environment;
 
     private bool $debug;
 
@@ -44,7 +45,7 @@ class Kernel implements KernelInterface
     private array $cache = [];
 
     public function __construct(
-        Environment $environment,
+        EnvironmentInterface $environment,
         ?ContainerBuilderInterface $builder = null,
         bool $debug = false,
     ) {
@@ -262,9 +263,9 @@ class Kernel implements KernelInterface
     /**
      * @inheritdoc
      */
-    public function getEnvironment(): string
+    public function getEnvironment(): EnvironmentInterface
     {
-        return $this->environment->value;
+        return $this->environment;
     }
 
     /**

@@ -2,8 +2,6 @@
 
 namespace Georgeff\Kernel\Contract;
 
-use Georgeff\Kernel\Environment;
-
 interface ConfigurableModuleInterface extends ModuleInterface
 {
     /**
@@ -11,5 +9,5 @@ interface ConfigurableModuleInterface extends ModuleInterface
      *
      * @return array<string, mixed>
      */
-    public function config(Environment $env): array;
+    public function config(EnvironmentInterface $env): array;
 }
