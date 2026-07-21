@@ -790,7 +790,10 @@ class KernelTest extends TestCase
     public function test_get_debug_info_includes_debug_info_from_debuggable_resolved_service(): void
     {
         $service = new class implements \Georgeff\Kernel\Debug\DebuggableInterface {
-            public function getDebugInfo(): array { return ['custom' => 'data']; }
+            public function getDebugInfo(): array
+            {
+                return ['custom' => 'data'];
+            }
         };
 
         $kernel = new Kernel(new Testing(), debug: true);
@@ -831,14 +834,20 @@ class KernelTest extends TestCase
         $registeredA = false;
         $registeredB = false;
 
-        $moduleA = new class($registeredA) implements ModuleInterface {
+        $moduleA = new class ($registeredA) implements ModuleInterface {
             public function __construct(private bool &$registered) {}
-            public function register(KernelInterface $kernel): void { $this->registered = true; }
+            public function register(KernelInterface $kernel): void
+            {
+                $this->registered = true;
+            }
         };
 
-        $moduleB = new class($registeredB) implements ModuleInterface {
+        $moduleB = new class ($registeredB) implements ModuleInterface {
             public function __construct(private bool &$registered) {}
-            public function register(KernelInterface $kernel): void { $this->registered = true; }
+            public function register(KernelInterface $kernel): void
+            {
+                $this->registered = true;
+            }
         };
 
         $kernel = new Kernel(new Testing());
@@ -865,7 +874,7 @@ class KernelTest extends TestCase
         $kernel = new Kernel(new Testing());
         $stub   = $this->createStub(ModuleInterface::class);
 
-        $module = new class($kernel, $stub) implements ModuleInterface {
+        $module = new class ($kernel, $stub) implements ModuleInterface {
             public function __construct(
                 private KernelInterface $kernel,
                 private ModuleInterface $stub,
@@ -938,9 +947,12 @@ class KernelTest extends TestCase
     {
         $registered = false;
 
-        $module = new class($registered) implements ModuleInterface {
+        $module = new class ($registered) implements ModuleInterface {
             public function __construct(private bool &$registered) {}
-            public function register(KernelInterface $kernel): void { $this->registered = true; }
+            public function register(KernelInterface $kernel): void
+            {
+                $this->registered = true;
+            }
         };
 
         $kernel = new Kernel(new Testing());
@@ -954,7 +966,7 @@ class KernelTest extends TestCase
     {
         $service = new \stdClass();
 
-        $module = new class($service) implements ModuleInterface {
+        $module = new class ($service) implements ModuleInterface {
             public function __construct(private \stdClass $service) {}
             public function register(KernelInterface $kernel): void
             {
@@ -973,7 +985,7 @@ class KernelTest extends TestCase
     {
         $receivedContainer = null;
 
-        $module = new class($receivedContainer) implements BootableModuleInterface {
+        $module = new class ($receivedContainer) implements BootableModuleInterface {
             public function __construct(private mixed &$receivedContainer) {}
             public function register(KernelInterface $kernel): void {}
             public function boot(ContainerInterface $container): void
@@ -994,15 +1006,21 @@ class KernelTest extends TestCase
     {
         $registered = false;
 
-        $module = new class($registered) implements ModuleInterface {
+        $module = new class ($registered) implements ModuleInterface {
             public function __construct(private bool &$registered) {}
-            public function register(KernelInterface $kernel): void { $this->registered = true; }
+            public function register(KernelInterface $kernel): void
+            {
+                $this->registered = true;
+            }
         };
 
-        $aggregate = new class($module) implements AggregateModuleInterface {
+        $aggregate = new class ($module) implements AggregateModuleInterface {
             public function __construct(private ModuleInterface $module) {}
             public function register(KernelInterface $kernel): void {}
-            public function modules(EnvironmentInterface $env): array { return [$this->module]; }
+            public function modules(EnvironmentInterface $env): array
+            {
+                return [$this->module];
+            }
         };
 
         $kernel = new Kernel(new Testing());
@@ -1017,7 +1035,7 @@ class KernelTest extends TestCase
         $receivedEnv = null;
         $environment = new Production();
 
-        $aggregate = new class($receivedEnv) implements AggregateModuleInterface {
+        $aggregate = new class ($receivedEnv) implements AggregateModuleInterface {
             public function __construct(private mixed &$receivedEnv) {}
             public function register(KernelInterface $kernel): void {}
             public function modules(EnvironmentInterface $env): array
@@ -1093,7 +1111,7 @@ class KernelTest extends TestCase
         $receivedEnv = null;
         $environment = new Production();
 
-        $module = new class($receivedEnv) implements ConfigurableModuleInterface {
+        $module = new class ($receivedEnv) implements ConfigurableModuleInterface {
             public function __construct(private mixed &$receivedEnv) {}
             public function register(KernelInterface $kernel): void {}
             public function config(EnvironmentInterface $env): array
@@ -1604,7 +1622,7 @@ class KernelTest extends TestCase
     {
         $inner = new \stdClass();
 
-        $definingModule = new class($inner) implements ModuleInterface {
+        $definingModule = new class ($inner) implements ModuleInterface {
             public function __construct(private \stdClass $inner) {}
             public function register(KernelInterface $kernel): void
             {
@@ -1883,7 +1901,7 @@ class KernelTest extends TestCase
         $kernel->shutdown();
 
         $this->expectException(KernelException::class);
-        $this->expectExceptionMessage('Kernel is shutdown, cannot restart shared services');
+        $this->expectExceptionMessage('Kernel is shutdown, cannot reset shared services');
 
         $kernel->resetServices();
     }
@@ -1892,7 +1910,10 @@ class KernelTest extends TestCase
     {
         $service = new class implements \Georgeff\Kernel\Contract\ResettableInterface {
             public int $count = 0;
-            public function reset(): void { $this->count = 0; }
+            public function reset(): void
+            {
+                $this->count = 0;
+            }
         };
 
         $kernel = new Kernel(new Testing());
@@ -1911,7 +1932,10 @@ class KernelTest extends TestCase
     {
         $service = new class implements \Georgeff\Kernel\Contract\ResettableInterface {
             public int $count = 5;
-            public function reset(): void { $this->count = 0; }
+            public function reset(): void
+            {
+                $this->count = 0;
+            }
         };
 
         $kernel = new Kernel(new Testing());
@@ -1928,7 +1952,10 @@ class KernelTest extends TestCase
     {
         $service = new class implements \Georgeff\Kernel\Contract\ResettableInterface {
             public int $count = 0;
-            public function reset(): void { $this->count = 0; }
+            public function reset(): void
+            {
+                $this->count = 0;
+            }
         };
 
         $kernel = new Kernel(new Testing());
@@ -1961,7 +1988,10 @@ class KernelTest extends TestCase
     public function test_shutdown_clears_service_resetter_failure_state(): void
     {
         $service = new class implements \Georgeff\Kernel\Contract\ResettableInterface {
-            public function reset(): void { throw new \RuntimeException('boom'); }
+            public function reset(): void
+            {
+                throw new \RuntimeException('boom');
+            }
         };
 
         $kernel = new Kernel(new Testing(), debug: true);

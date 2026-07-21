@@ -374,7 +374,7 @@ class Kernel implements KernelInterface
     {
         KernelException::throwIfNot($this->isBooted(), 'Kernel has not been booted, cannot reset shared services');
 
-        KernelException::throwIf($this->isShutdown(), 'Kernel is shutdown, cannot restart shared services');
+        KernelException::throwIf($this->isShutdown(), 'Kernel is shutdown, cannot reset shared services');
 
         $this->resetter->reset($failureThreshold);
 
