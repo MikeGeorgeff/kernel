@@ -136,6 +136,18 @@ interface KernelInterface extends Debug\DebuggableInterface
     public function define(string $id, callable $factory): DefinitionInterface;
 
     /**
+     * Add a container definition if the definition ID does not already exist
+     *
+     * @param string                              $id
+     * @param callable(ContainerInterface): mixed $factory
+     *
+     * @return DefinitionInterface
+     *
+     * @throws KernelExceptionInterface
+     */
+    public function defineFallback(string $id, callable $factory): DefinitionInterface;
+
+    /**
      * Decorate a container definition
      *
      * @param string                                     $id

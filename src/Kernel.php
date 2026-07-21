@@ -106,6 +106,10 @@ class Kernel implements KernelInterface
             $this->modules->register($this);
         });
 
+        $this->profile('serviceFallbacks', function () {
+            $this->definitions->addFallbacksToDefinitions();
+        });
+
         $this->profile('serviceOverrides', function () {
             $this->definitions->applyOverrides();
         });
@@ -339,6 +343,13 @@ class Kernel implements KernelInterface
         KernelException::throwIf($this->isBooted(), 'Kernel has already been booted, cannot add new container definitions');
 
         return $this->definitions->add($id, $factory);
+    }
+
+    public function defineFallback(string $id, callable $factory): DefinitionInterface
+    {
+        KernelException::throwIf($this->isBooted(), 'Kernel has already been booted, cannot add new definition fallbacks');
+
+        return $this->definitions->addFallback($id, $factory);
     }
 
     public function decorate(string $id, callable $decorator): static

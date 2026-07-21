@@ -16,6 +16,7 @@ use Georgeff\Kernel\Environment\Local;
 use Georgeff\Kernel\Environment\Production;
 use Georgeff\Kernel\Environment\Staging;
 use Georgeff\Kernel\Environment\Testing;
+use Georgeff\Kernel\Exception\DefinitionException;
 use Georgeff\Kernel\Exception\KernelException;
 use Georgeff\Kernel\Exception\ModuleException;
 use Georgeff\Kernel\Kernel;
@@ -170,15 +171,16 @@ class KernelTest extends TestCase
         $this->assertInstanceOf(DefinitionInterface::class, $definition);
     }
 
-    public function test_define_overwrites_existing_id(): void
+    public function test_define_throws_when_redefining_an_existing_id(): void
     {
         $kernel = new Kernel(new Testing());
 
         $kernel->define('foo', fn() => 'first')->share();
-        $kernel->define('foo', fn() => 'second')->share();
-        $kernel->boot();
 
-        $this->assertSame('second', $kernel->getContainer()->get('foo'));
+        $this->expectException(DefinitionException::class);
+        $this->expectExceptionMessage('Cannot redefine an existing definition ID: [foo]');
+
+        $kernel->define('foo', fn() => 'second');
     }
 
     public function test_it_throws_when_defining_after_boot(): void
@@ -190,6 +192,80 @@ class KernelTest extends TestCase
         $this->expectExceptionMessage('Kernel has already been booted, cannot add new container definitions');
 
         $kernel->define('foo', fn() => 'bar');
+    }
+
+    // -------------------------------------------------------------------------
+    // defineFallback()
+    // -------------------------------------------------------------------------
+
+    public function test_define_fallback_returns_a_definition(): void
+    {
+        $kernel = new Kernel(new Testing());
+
+        $definition = $kernel->defineFallback('foo', fn() => 'bar');
+
+        $this->assertInstanceOf(DefinitionInterface::class, $definition);
+    }
+
+    public function test_define_fallback_throws_after_boot(): void
+    {
+        $kernel = new Kernel(new Testing());
+        $kernel->boot();
+
+        $this->expectException(KernelException::class);
+        $this->expectExceptionMessage('Kernel has already been booted, cannot add new definition fallbacks');
+
+        $kernel->defineFallback('foo', fn() => 'bar');
+    }
+
+    public function test_define_fallback_is_used_when_nothing_else_defines_the_id(): void
+    {
+        $kernel = new Kernel(new Testing());
+        $kernel->defineFallback('foo', fn() => 'fallback')->share();
+        $kernel->boot();
+
+        $this->assertSame('fallback', $kernel->getContainer()->get('foo'));
+    }
+
+    public function test_define_fallback_is_ignored_when_a_real_definition_exists(): void
+    {
+        $kernel = new Kernel(new Testing());
+        $kernel->define('foo', fn() => 'real')->share();
+        $kernel->defineFallback('foo', fn() => 'fallback');
+        $kernel->boot();
+
+        $this->assertSame('real', $kernel->getContainer()->get('foo'));
+    }
+
+    public function test_define_fallback_registered_after_the_real_definition_is_still_ignored(): void
+    {
+        $kernel = new Kernel(new Testing());
+        $kernel->defineFallback('foo', fn() => 'fallback');
+        $kernel->define('foo', fn() => 'real')->share();
+        $kernel->boot();
+
+        $this->assertSame('real', $kernel->getContainer()->get('foo'));
+    }
+
+    public function test_two_modules_can_define_the_same_fallback_without_either_winning_deterministically_causing_an_error(): void
+    {
+        $kernel = new Kernel(new Testing());
+        $kernel->defineFallback('foo', fn() => 'first')->share();
+        $kernel->defineFallback('foo', fn() => 'second')->share();
+        $kernel->boot();
+
+        // Neither package cares which fallback wins, only that something does.
+        $this->assertContains($kernel->getContainer()->get('foo'), ['first', 'second']);
+    }
+
+    public function test_override_can_target_an_id_that_only_exists_via_a_fallback(): void
+    {
+        $kernel = new Kernel(new Testing());
+        $kernel->defineFallback('foo', fn() => 'fallback');
+        $kernel->override('foo', fn() => 'overridden');
+        $kernel->boot();
+
+        $this->assertSame('overridden', $kernel->getContainer()->get('foo'));
     }
 
     public function test_on_booting_callback_is_called_during_boot(): void
@@ -1296,7 +1372,7 @@ class KernelTest extends TestCase
         $kernel = new Kernel(new Testing());
         $kernel->decorate('missing.service', fn($inner, $c) => $inner);
 
-        $this->expectException(KernelException::class);
+        $this->expectException(DefinitionException::class);
         $this->expectExceptionMessage('Cannot decorate a non-existing definition ID: [missing.service]');
 
         $kernel->boot();
@@ -1436,7 +1512,7 @@ class KernelTest extends TestCase
         $kernel = new Kernel(new Testing());
         $kernel->override('missing.service', fn() => 'overridden');
 
-        $this->expectException(KernelException::class);
+        $this->expectException(DefinitionException::class);
         $this->expectExceptionMessage('Cannot override a non-existing definition');
 
         $kernel->boot();

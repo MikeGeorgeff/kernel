@@ -3,7 +3,7 @@
 namespace Georgeff\Kernel\DI;
 
 use Psr\Container\ContainerInterface;
-use Georgeff\Kernel\Exception\KernelException;
+use Georgeff\Kernel\Exception\DefinitionException;
 
 /**
  * @internal
@@ -14,6 +14,11 @@ final class DefinitionRepository
      * @var array<string, DefinitionInterface>
      */
     private array $definitions = [];
+
+    /**
+     * @var array<string, DefinitionInterface>
+     */
+    private array $fallbacks = [];
 
     /**
      * @var array<string, list<array{factory: callable(ContainerInterface): mixed, innerId: string}>>
@@ -31,13 +36,26 @@ final class DefinitionRepository
     public function gc(): void
     {
         $this->definitions = [];
+        $this->fallbacks   = [];
         $this->decorators  = [];
         $this->overrides   = [];
     }
 
+    public function isDefined(string $id): bool
+    {
+        return isset($this->definitions[$id]);
+    }
+
     public function add(string $id, callable $factory): DefinitionInterface
     {
+        DefinitionException::throwIf($this->isDefined($id), "Cannot redefine an existing definition ID: [$id]");
+
         return $this->definitions[$id] = Definition::for($id, $factory);
+    }
+
+    public function addFallback(string $id, callable $factory): DefinitionInterface
+    {
+        return $this->fallbacks[$id] = Definition::for($id, $factory);
     }
 
     public function get(string $id): ?DefinitionInterface
@@ -78,7 +96,7 @@ final class DefinitionRepository
     private function applyDecoratorsForDefinition(string $id): void
     {
         if (null === ($inner = $this->get($id))) {
-            throw new KernelException("Cannot decorate a non-existing definition ID: [{$id}]");
+            throw new DefinitionException("Cannot decorate a non-existing definition ID: [{$id}]");
         }
 
         $decorators   = $this->decorators[$id];
@@ -92,7 +110,7 @@ final class DefinitionRepository
             $outerFactory = $decorator['factory'];
         }
 
-        $decorated = $this->add($id, $outerFactory);
+        $decorated = $this->definitions[$id] = Definition::for($id, $outerFactory);
 
         if ($inner->isShared()) {
             $decorated->share();
@@ -115,6 +133,15 @@ final class DefinitionRepository
         return $this->definitions;
     }
 
+    public function addFallbacksToDefinitions(): void
+    {
+        foreach ($this->fallbacks as $id => $definition) {
+            if (!$this->isDefined($id)) {
+                $this->definitions[$id] = $definition;
+            }
+        }
+    }
+
     public function applyDecorators(): void
     {
         foreach (array_keys($this->decorators) as $id) {
@@ -127,7 +154,7 @@ final class DefinitionRepository
         foreach ($this->overrides as $id => $data) {
             $original = $this->get($id);
 
-            KernelException::throwIf(null === $original, 'Cannot override a non-existing definition');
+            DefinitionException::throwIf(null === $original, 'Cannot override a non-existing definition');
 
             if ($data['preserve']) {
                 assert(null !== $original);
