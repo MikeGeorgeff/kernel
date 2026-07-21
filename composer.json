@@ -1,6 +1,6 @@
 {
   "name": "georgeff/kernel",
-  "description": "A lightweight application kernel with service container bootstrapping and lifecycle events",
+  "description": "A lightweight application kernel with service container bootstrapping, a module system, and lifecycle callbacks",
   "type": "library",
   "authors": [
     {
