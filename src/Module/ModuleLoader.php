@@ -31,9 +31,9 @@ final class ModuleLoader implements DebuggableInterface
     private array $aggregates = [];
 
     /**
-     * @var class-string[]
+     * @var list<class-string<ModuleInterface>>
      */
-    private array $loadedModules = [];
+    private array $addedModules = [];
 
     /**
      * @var array<string, mixed>
@@ -62,6 +62,14 @@ final class ModuleLoader implements DebuggableInterface
         $this->config     = [];
     }
 
+    /**
+     * @return list<class-string<ModuleInterface>>
+     */
+    public function getModules(): array
+    {
+        return $this->addedModules;
+    }
+
     public function add(ModuleInterface $module): void
     {
         ModuleException::throwIf($this->loaded, 'Cannot add modules after modules have been loaded');
@@ -72,6 +80,8 @@ final class ModuleLoader implements DebuggableInterface
         );
 
         $this->modules[$module::class] = $module;
+
+        $this->addedModules[] = $module::class;
 
         if ($module instanceof AggregateModuleInterface) {
             $this->aggregates[$module::class] = $module;
@@ -97,8 +107,6 @@ final class ModuleLoader implements DebuggableInterface
             if ($module instanceof ConfigurableModuleInterface) {
                 $config = array_merge($config, $module->config($env));
             }
-
-            $this->loadedModules[] = $module::class;
         }
 
         $this->loaded = true;
@@ -174,7 +182,7 @@ final class ModuleLoader implements DebuggableInterface
             'loaded'     => $this->loaded,
             'registered' => $this->registered,
             'booted'     => $this->booted,
-            'modules'    => $this->loadedModules,
+            'modules'    => $this->addedModules,
         ];
     }
 }

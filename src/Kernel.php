@@ -377,6 +377,11 @@ class Kernel implements KernelInterface
         return $this;
     }
 
+    public function getModules(): array
+    {
+        return $this->modules->getModules();
+    }
+
     public function getContainer(): ContainerInterface
     {
         KernelException::throwIfNot($this->isBooted(), 'Container is inaccessible, kernel has not been booted');

@@ -180,6 +180,13 @@ interface KernelInterface extends Debug\DebuggableInterface
     public function addModule(ModuleInterface $module): static;
 
     /**
+     * Get a list of added modules
+     *
+     * @return list<class-string<ModuleInterface>>
+     */
+    public function getModules(): array;
+
+    /**
      * Get the container
      *
      * @return \Psr\Container\ContainerInterface

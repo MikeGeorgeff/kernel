@@ -752,6 +752,38 @@ class KernelTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
+    // getModules()
+    // -------------------------------------------------------------------------
+
+    public function test_get_modules_returns_an_empty_list_initially(): void
+    {
+        $kernel = new Kernel(new Testing());
+
+        $this->assertSame([], $kernel->getModules());
+    }
+
+    public function test_get_modules_reflects_an_added_module_before_boot(): void
+    {
+        $kernel = new Kernel(new Testing());
+        $module = $this->createStub(ModuleInterface::class);
+
+        $kernel->addModule($module);
+
+        $this->assertSame([$module::class], $kernel->getModules());
+    }
+
+    public function test_get_modules_reflects_added_modules_after_boot(): void
+    {
+        $kernel = new Kernel(new Testing());
+        $module = $this->createStub(ModuleInterface::class);
+
+        $kernel->addModule($module);
+        $kernel->boot();
+
+        $this->assertSame([$module::class], $kernel->getModules());
+    }
+
+    // -------------------------------------------------------------------------
     // Module integration
     // -------------------------------------------------------------------------
 

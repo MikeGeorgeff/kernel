@@ -745,6 +745,63 @@ class ModuleLoaderTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
+    // getModules()
+    // -------------------------------------------------------------------------
+
+    public function test_get_modules_returns_an_empty_list_initially(): void
+    {
+        $loader = new ModuleLoader();
+
+        $this->assertSame([], $loader->getModules());
+    }
+
+    public function test_get_modules_reflects_a_module_immediately_after_add_before_load(): void
+    {
+        $loader = new ModuleLoader();
+        $module = $this->createStub(ModuleInterface::class);
+
+        $loader->add($module);
+
+        $this->assertSame([$module::class], $loader->getModules());
+    }
+
+    public function test_get_modules_includes_aggregate_expanded_modules_after_load(): void
+    {
+        $loader = new ModuleLoader();
+
+        $module = $this->createStub(ModuleInterface::class);
+
+        $aggregate = new class($module) implements AggregateModuleInterface {
+            public function __construct(private ModuleInterface $module) {}
+            public function register(KernelInterface $kernel): void {}
+            public function modules(EnvironmentInterface $env): array { return [$this->module]; }
+        };
+
+        $loader->add($aggregate);
+
+        $this->assertSame([$aggregate::class], $loader->getModules(), 'Aggregate children should not be expanded before load()');
+
+        $loader->load(new Testing());
+
+        $this->assertSame([$aggregate::class, $module::class], $loader->getModules());
+    }
+
+    public function test_get_modules_does_not_include_a_module_rejected_by_the_duplicate_guard(): void
+    {
+        $loader = new ModuleLoader();
+        $module = $this->createStub(ModuleInterface::class);
+
+        $loader->add($module);
+
+        try {
+            $loader->add(clone $module);
+        } catch (ModuleException) {
+        }
+
+        $this->assertSame([$module::class], $loader->getModules());
+    }
+
+    // -------------------------------------------------------------------------
     // getDebugInfo()
     // -------------------------------------------------------------------------
 
