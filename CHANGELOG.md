@@ -25,7 +25,8 @@ All notable changes to `georgeff/kernel` are documented here.
 - `Exception\ThrowHelpers` trait (`instance()`, `throw()`, `throwIf()`, `throwIfNot()`) — shared by every concrete exception class; `throw()`/`throwIf()`/`throwIfNot()` now all accept an optional `$previous` throwable
 - `ModuleException`, `ConfigException`, `EnvironmentException`, `DefinitionException`, `ServiceResetException` — dedicated exception types (all `KernelExceptionInterface`, all `\RuntimeException`) for their respective areas, replacing generic `KernelException`/raw SPL exceptions in those spots
 - `ModuleException::throwOnRegistrationError()` / `throwOnBootError()` — wrap an unexpected throwable from a module's `register()`/`boot()` with the original preserved as `$previous`; a thrown `KernelExceptionInterface` or `ContainerExceptionInterface` passes through unwrapped instead of being re-wrapped
-- A `garbageCollection` boot phase (after `postBoot`) that clears `DefinitionRepository`'s and `ModuleLoader`'s boot-only working state, for long-running processes that keep a `Kernel` instance alive after `boot()` returns
+- `HookException` — thrown when a lifecycle callback (`onBooting`/`onBooted`/`onShutdown`/`afterShutdown`) fails; `throwOnCallbackError()` wraps a single failure, `throwOnCallbackErrors()` aggregates multiple into one message (used by the shutdown hooks — see the `Changed` entry below)
+- A `garbageCollection` boot phase (after `postBoot`) that clears `DefinitionRepository`'s, `ModuleLoader`'s, and `HookRepository`'s boot-only working state (`onBooting`/`onBooted` callbacks, consumed once boot completes), for long-running processes that keep a `Kernel` instance alive after `boot()` returns. `onShutdown`/`afterShutdown` callbacks are deliberately left uncleared by this phase, since they haven't run yet at that point
 
 ### Changed
 - **Breaking:** `KernelInterface::getEnvironment()` return type changed from `string` to `EnvironmentInterface`
@@ -37,6 +38,8 @@ All notable changes to `georgeff/kernel` are documented here.
 - `Contract\RunnableKernelInterface` moved to the `Contract\` namespace and now extends `KernelInterface` directly
 - `ModuleLoader`'s internal lifecycle guards (add-after-load, register-before-load, boot-before-register) now throw `ModuleException` instead of raw `\LogicException`
 - `KernelException::throw()`/`throwIf()`/`throwIfNot()` gained an optional `$previous` parameter (`throw()` previously took no `$previous` at all)
+- Lifecycle callback failure handling: a failing `onBooting`/`onBooted` callback still aborts immediately (matching boot's sequential, order-dependent nature), but a raw non-`KernelExceptionInterface`/`ContainerExceptionInterface` throwable is now wrapped in `HookException` rather than propagating unwrapped. `onShutdown`/`afterShutdown` callbacks now run to completion even if an earlier one throws — all failures are collected and reported together in a single aggregated `HookException` once every callback has had a chance to run, instead of the first failure aborting the rest of shutdown
+- `KernelInterface::boot()`/`shutdown()` now document `@throws KernelExceptionInterface`
 - Dropped PHP 8.2 and 8.3 support — now requires `php: ^8.4`
 
 ### Removed

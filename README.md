@@ -471,6 +471,8 @@ $kernel->onBooted(function (KernelInterface $kernel) {
 
 Both must be registered before `boot()` is called.
 
+Boot callbacks fail fast: if a callback throws, the remaining callbacks in that hook are never called and the exception propagates immediately, aborting `boot()`. A thrown `KernelExceptionInterface` or PSR-11 `ContainerExceptionInterface` propagates as-is; anything else is wrapped in a `HookException` with the original preserved as the previous exception. This matches the sequential, order-dependent nature of booting — there's no reason to keep registering services once an earlier step has already failed.
+
 #### Shutdown callbacks
 
 `onShutdown` runs before the kernel is marked as shut down. `afterShutdown` runs after. Both can be registered any time before `shutdown()` is called — including after boot:
@@ -484,6 +486,8 @@ $kernel->afterShutdown(function (KernelInterface $kernel) {
     // isShutdown() is true here
 });
 ```
+
+Shutdown callbacks behave differently from boot callbacks: every callback still runs even if an earlier one throws, since shutdown is cleanup — one broken hook (say, a failed cache flush) shouldn't prevent other unrelated cleanup (closing a DB connection, releasing a lock) from running. If any callbacks failed, a single `HookException` is thrown once every callback has had a chance to run, with a message aggregating every failure and the first failure preserved as the previous exception.
 
 #### Resolution hooks
 
@@ -628,11 +632,11 @@ try {
     $kernel->boot();
 } catch (KernelExceptionInterface $e) {
     // KernelException, ModuleException, ConfigException, DefinitionException,
-    // EnvironmentException, or ServiceResetException
+    // EnvironmentException, HookException, or ServiceResetException
 }
 ```
 
-`KernelException` (general kernel-state guards), `ModuleException` (module lifecycle), `ConfigException` (`Config::branch()`), `DefinitionException` (`DefinitionRepository` guards), `EnvironmentException` (`EnvironmentResolver`), and `ServiceResetException` (`resetServices()`) each provide static helpers via the shared `Exception\ThrowHelpers` trait:
+`KernelException` (general kernel-state guards), `ModuleException` (module lifecycle), `ConfigException` (`Config::branch()`), `DefinitionException` (`DefinitionRepository` guards), `EnvironmentException` (`EnvironmentResolver`), `HookException` (a lifecycle callback failing — see [Lifecycle Callbacks](#lifecycle-callbacks)), and `ServiceResetException` (`resetServices()`) each provide static helpers via the shared `Exception\ThrowHelpers` trait:
 
 ```php
 use Georgeff\Kernel\Exception\KernelException;
