@@ -28,6 +28,13 @@ final class ServiceResetter implements DebuggableInterface
      */
     private array $logs = [];
 
+    public function gc(): void
+    {
+        $this->services = [];
+        $this->failures = [];
+        $this->logs     = [];
+    }
+
     /**
      * @return array{
      *      failures: array<string, int>,

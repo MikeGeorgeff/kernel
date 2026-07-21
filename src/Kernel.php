@@ -11,9 +11,9 @@ use Georgeff\Kernel\Contract\ContainerBuilderInterface;
 
 class Kernel implements KernelInterface
 {
-    protected ?float $startTime = null;
+    private ?Debug\Profiler $bootProfile = null;
 
-    protected ?Debug\Profiler $bootProfile = null;
+    private ?Debug\Profiler $shutdownProfile = null;
 
     private ?Debug\ServiceResolution $serviceResolution = null;
 
@@ -42,7 +42,7 @@ class Kernel implements KernelInterface
     /**
      * @var array<string, mixed>
      */
-    private array $cache = [];
+    private array $storage = [];
 
     public function __construct(
         EnvironmentInterface $environment,
@@ -58,25 +58,27 @@ class Kernel implements KernelInterface
         $this->resetter    = new DI\ServiceResetter();
     }
 
-    private function initProfiler(): void
+    protected function initProfiler(): ?Debug\Profiler
     {
         if (!$this->isDebug()) {
-            return;
+            return null;
         }
 
-        $this->bootProfile = new Debug\Profiler();
+        $profiler = new Debug\Profiler();
 
-        $this->startTime   = $this->bootProfile->start();
+        $profiler->start();
+
+        return $profiler;
     }
 
-    private function profile(string $phase, callable $fn): void
+    private function profile(?Debug\Profiler $profile, string $phase, callable $fn): void
     {
-        $this->bootProfile?->startPhase($phase);
+        $profile?->startPhase($phase);
 
         try {
             $fn();
         } finally {
-            $this->bootProfile?->stopPhase($phase);
+            $profile?->stopPhase($phase);
         }
     }
 
@@ -88,38 +90,38 @@ class Kernel implements KernelInterface
 
         KernelException::throwIf($this->isBooting(), 'Kernel is booting, cannot call boot again');
 
-        $this->initProfiler();
+        $this->bootProfile = $this->initProfiler();
 
-        $this->profile('preBoot', function () {
+        $this->profile($this->bootProfile, 'preBoot', function () {
             $this->hooks->invokeOnBootingCallbacks($this);
         });
 
         $this->booting = true;
 
-        $this->profile('moduleLoad', function () {
-            $this->cache['module.config'] = $this->modules->load($this->environment);
+        $this->profile($this->bootProfile, 'moduleLoad', function () {
+            $this->storage['module.config'] = $this->modules->load($this->environment);
         });
 
-        $this->profile('moduleRegistration', function () {
+        $this->profile($this->bootProfile, 'moduleRegistration', function () {
             $this->modules->register($this);
         });
 
-        $this->profile('serviceFallbacks', function () {
+        $this->profile($this->bootProfile, 'serviceFallbacks', function () {
             $this->definitions->addFallbacksToDefinitions();
         });
 
-        $this->profile('serviceOverrides', function () {
+        $this->profile($this->bootProfile, 'serviceOverrides', function () {
             $this->definitions->applyOverrides();
         });
 
-        $this->profile('serviceDecoration', function () {
+        $this->profile($this->bootProfile, 'serviceDecoration', function () {
             $this->definitions->applyDecorators();
         });
 
-        $this->profile('serviceRegistration', function () {
+        $this->profile($this->bootProfile, 'serviceRegistration', function () {
             $tags = [];
 
-            $this->cache['services.shared'] = [];
+            $this->storage['services.shared'] = [];
 
             foreach ($this->definitions->all() as $definition) {
                 $id = $definition->getId();
@@ -127,7 +129,7 @@ class Kernel implements KernelInterface
                 $this->builder->register($id, $definition->getFactory(), $definition->isShared(), $definition->getAliases());
 
                 if ($definition->isShared()) {
-                    $this->cache['services.shared'][$id] = true;
+                    $this->storage['services.shared'][$id] = true;
                 }
 
                 foreach ($definition->getTags() as $tag) {
@@ -145,9 +147,9 @@ class Kernel implements KernelInterface
                 Config\ConfigInterface::class,
                 function () {
                     /** @var array<string, mixed> */
-                    $config = $this->cache['module.config'] ?? [];
+                    $config = $this->storage['module.config'] ?? [];
 
-                    unset($this->cache['module.config']);
+                    unset($this->storage['module.config']);
 
                     return new Config\Config($config);
                 },
@@ -155,7 +157,7 @@ class Kernel implements KernelInterface
             );
         });
 
-        $this->profile('containerInit', function () {
+        $this->profile($this->bootProfile, 'containerInit', function () {
             if ($this->isDebug()) {
                 $this->serviceResolution = new Debug\ServiceResolution($this->definitions->getRaw());
 
@@ -169,7 +171,7 @@ class Kernel implements KernelInterface
             }
 
             /** @var array<string, bool> */
-            $shared = $this->cache['services.shared'];
+            $shared = $this->storage['services.shared'];
 
             $this->builder->onResolved(function (string $id, mixed $resolved) use ($shared) {
                 if ($resolved instanceof Contract\ResettableInterface && isset($shared[$id])) {
@@ -180,7 +182,7 @@ class Kernel implements KernelInterface
             $this->container = $this->builder->getContainer();
         });
 
-        $this->profile('moduleBoot', function () {
+        $this->profile($this->bootProfile, 'moduleBoot', function () {
             assert(null !== $this->container);
 
             $this->modules->boot($this->container);
@@ -190,16 +192,16 @@ class Kernel implements KernelInterface
 
         $this->booting = false;
 
-        $this->profile('postBoot', function () {
+        $this->profile($this->bootProfile, 'postBoot', function () {
             $this->hooks->invokeOnBootedCallbacks($this);
         });
 
-        $this->profile('garbageCollection', function () {
+        $this->profile($this->bootProfile, 'garbageCollection', function () {
             $this->definitions->gc();
             $this->modules->gc();
             $this->hooks->gc();
 
-            unset($this->cache['services.shared']);
+            unset($this->storage['services.shared']);
         });
 
         $this->bootProfile?->stop();
@@ -214,11 +216,22 @@ class Kernel implements KernelInterface
             return;
         }
 
-        $this->hooks->invokeOnShutdownCallbacks($this);
+        $this->shutdownProfile = $this->initProfiler();
+
+        $this->profile($this->shutdownProfile, 'shutdown', function () {
+            $this->hooks->invokeOnShutdownCallbacks($this);
+
+            $this->container = null;
+            $this->storage   = [];
+
+            $this->resetter->gc();
+        });
 
         $this->shutdown = true;
 
-        $this->hooks->invokeAfterShutdownCallbacks($this);
+        $this->profile($this->shutdownProfile, 'afterShutdown', function () {
+            $this->hooks->invokeAfterShutdownCallbacks($this);
+        });
     }
 
     /**
@@ -361,6 +374,8 @@ class Kernel implements KernelInterface
     {
         KernelException::throwIfNot($this->isBooted(), 'Kernel has not been booted, cannot reset shared services');
 
+        KernelException::throwIf($this->isShutdown(), 'Kernel is shutdown, cannot restart shared services');
+
         $this->resetter->reset($failureThreshold);
 
         return $this;
@@ -386,6 +401,8 @@ class Kernel implements KernelInterface
     {
         KernelException::throwIfNot($this->isBooted(), 'Container is inaccessible, kernel has not been booted');
 
+        KernelException::throwIf($this->isShutdown(), 'Container is inaccessible, kernel is shutdown');
+
         assert(null !== $this->container);
 
         return $this->container;
@@ -393,7 +410,7 @@ class Kernel implements KernelInterface
 
     public function getStartTime(): float
     {
-        return $this->isDebug() && null !== $this->startTime ? $this->startTime : -INF;
+        return $this->bootProfile?->getStartTime() ?? -INF;
     }
 
     public function getDebugInfo(): array
@@ -405,13 +422,17 @@ class Kernel implements KernelInterface
         $info = [];
 
         if ($this->bootProfile !== null) {
-            $info['bootProfile'] = $this->bootProfile->getDebugInfo();
-            $info['modules']     = $this->modules->getDebugInfo();
+            $info['boot.profile'] = $this->bootProfile->getDebugInfo();
+            $info['modules']      = $this->modules->getDebugInfo();
         }
 
         if (null !== $this->serviceResolution) {
             $info['services'] = $this->serviceResolution->getDebugInfo();
             $info['service.resetter'] = $this->resetter->getDebugInfo();
+        }
+
+        if (null !== $this->shutdownProfile) {
+            $info['shutdown.profile'] = $this->shutdownProfile->getDebugInfo();
         }
 
         return $info;

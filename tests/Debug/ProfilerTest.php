@@ -55,6 +55,21 @@ class ProfilerTest extends TestCase
         $this->assertSame(-INF, $profiler->getOverallDuration());
     }
 
+    public function test_get_start_time_returns_the_value_from_start(): void
+    {
+        $profiler  = new Profiler();
+        $startedAt = $profiler->start();
+
+        $this->assertSame($startedAt, $profiler->getStartTime());
+    }
+
+    public function test_get_start_time_returns_negative_infinity_when_not_started(): void
+    {
+        $profiler = new Profiler();
+
+        $this->assertSame(-INF, $profiler->getStartTime());
+    }
+
     public function test_start_phase_returns_float(): void
     {
         $profiler = new Profiler();

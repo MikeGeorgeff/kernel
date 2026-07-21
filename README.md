@@ -522,8 +522,13 @@ $kernel->isShutdown(); // true
 Shutdown runs in this order:
 
 1. `onShutdown` callbacks
-2. Kernel marked as shut down (`isShutdown()` becomes `true`)
-3. `afterShutdown` callbacks
+2. The container is released and resolved-service-reset tracking is cleared
+3. Kernel marked as shut down (`isShutdown()` becomes `true`)
+4. `afterShutdown` callbacks
+
+If an `onShutdown` callback throws, none of the following steps run — the container isn't released, `isShutdown()` stays `false`, and `afterShutdown` callbacks don't run. Shutdown either completes in full or is treated as not having happened at all, so a caller that catches the failure still has a working kernel rather than a half-torn-down one.
+
+After shutdown, `getContainer()` and `resetServices()` both throw `KernelException` — there's nothing left to resolve or reset.
 
 ### Resetting Services
 
@@ -598,10 +603,11 @@ $kernel->getDebugInfo(); // boot profile + service resolution + resetter data
 
 The `getDebugInfo()` array contains:
 
-- `bootProfile` — timing for each boot phase
+- `boot.profile` — timing for each boot phase
 - `modules` — module loader state: which module classes were added and whether each phase has run
 - `services` — which services have been resolved and which remain unresolved; each resolved entry includes a `resolutionCount` and, for services implementing `DebuggableInterface`, a `debugInfo` key
 - `service.resetter` — failure counts and logged exception messages per service id, for services that have failed a `reset()` at least once
+- `shutdown.profile` — timing for the `shutdown` and `afterShutdown` phases; only present once `shutdown()` has actually been called
 
 When debug is disabled, `getStartTime()` returns `-INF` and `getDebugInfo()` returns `[]`.
 

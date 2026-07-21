@@ -52,6 +52,11 @@ final class Profiler implements DebuggableInterface
         return $this->phases[$phase]['end.time'] = microtime(true);
     }
 
+    public function getStartTime(): float
+    {
+        return $this->start ?? -INF;
+    }
+
     /**
      * Get phase time
      */

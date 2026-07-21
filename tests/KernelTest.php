@@ -138,6 +138,18 @@ class KernelTest extends TestCase
         $kernel->getContainer();
     }
 
+    public function test_it_throws_when_accessing_container_after_shutdown(): void
+    {
+        $kernel = new Kernel(new Testing());
+        $kernel->boot();
+        $kernel->shutdown();
+
+        $this->expectException(KernelException::class);
+        $this->expectExceptionMessage('Container is inaccessible, kernel is shutdown');
+
+        $kernel->getContainer();
+    }
+
     public function test_it_registers_user_definitions(): void
     {
         $service = new \stdClass();
@@ -664,15 +676,40 @@ class KernelTest extends TestCase
 
         $info = $kernel->getDebugInfo();
 
-        $this->assertArrayHasKey('bootProfile', $info);
-        $this->assertArrayHasKey('start.time', $info['bootProfile']);
-        $this->assertArrayHasKey('end.time', $info['bootProfile']);
-        $this->assertArrayHasKey('duration', $info['bootProfile']);
-        $this->assertArrayHasKey('phases', $info['bootProfile']);
-        $this->assertArrayHasKey('preBoot', $info['bootProfile']['phases']);
-        $this->assertArrayHasKey('serviceDecoration', $info['bootProfile']['phases']);
-        $this->assertArrayHasKey('serviceRegistration', $info['bootProfile']['phases']);
-        $this->assertArrayHasKey('containerInit', $info['bootProfile']['phases']);
+        $this->assertArrayHasKey('boot.profile', $info);
+        $this->assertArrayHasKey('start.time', $info['boot.profile']);
+        $this->assertArrayHasKey('end.time', $info['boot.profile']);
+        $this->assertArrayHasKey('duration', $info['boot.profile']);
+        $this->assertArrayHasKey('phases', $info['boot.profile']);
+        $this->assertArrayHasKey('preBoot', $info['boot.profile']['phases']);
+        $this->assertArrayHasKey('serviceDecoration', $info['boot.profile']['phases']);
+        $this->assertArrayHasKey('serviceRegistration', $info['boot.profile']['phases']);
+        $this->assertArrayHasKey('containerInit', $info['boot.profile']['phases']);
+    }
+
+    public function test_get_debug_info_omits_shutdown_profile_before_shutdown(): void
+    {
+        $kernel = new Kernel(new Testing(), debug: true);
+        $kernel->boot();
+
+        $this->assertArrayNotHasKey('shutdown.profile', $kernel->getDebugInfo());
+    }
+
+    public function test_get_debug_info_returns_shutdown_profile_after_shutdown(): void
+    {
+        $kernel = new Kernel(new Testing(), debug: true);
+        $kernel->boot();
+        $kernel->shutdown();
+
+        $info = $kernel->getDebugInfo();
+
+        $this->assertArrayHasKey('shutdown.profile', $info);
+        $this->assertArrayHasKey('start.time', $info['shutdown.profile']);
+        $this->assertArrayHasKey('end.time', $info['shutdown.profile']);
+        $this->assertArrayHasKey('duration', $info['shutdown.profile']);
+        $this->assertArrayHasKey('phases', $info['shutdown.profile']);
+        $this->assertArrayHasKey('shutdown', $info['shutdown.profile']['phases']);
+        $this->assertArrayHasKey('afterShutdown', $info['shutdown.profile']['phases']);
     }
 
     public function test_profile_phase_is_stopped_even_when_callback_throws(): void
@@ -692,7 +729,7 @@ class KernelTest extends TestCase
         } catch (\RuntimeException) {
         }
 
-        $duration = $kernel->getDebugInfo()['bootProfile']['phases']['moduleRegistration']['duration'];
+        $duration = $kernel->getDebugInfo()['boot.profile']['phases']['moduleRegistration']['duration'];
 
         $this->assertIsFloat($duration);
     }
@@ -1082,7 +1119,7 @@ class KernelTest extends TestCase
         $kernel = new Kernel(new Testing(), debug: true);
         $kernel->boot();
 
-        $phases = $kernel->getDebugInfo()['bootProfile']['phases'];
+        $phases = $kernel->getDebugInfo()['boot.profile']['phases'];
 
         $this->assertArrayHasKey('moduleLoad', $phases);
         $this->assertArrayHasKey('moduleRegistration', $phases);
@@ -1839,6 +1876,18 @@ class KernelTest extends TestCase
         $kernel->resetServices();
     }
 
+    public function test_reset_services_throws_after_shutdown(): void
+    {
+        $kernel = new Kernel(new Testing());
+        $kernel->boot();
+        $kernel->shutdown();
+
+        $this->expectException(KernelException::class);
+        $this->expectExceptionMessage('Kernel is shutdown, cannot restart shared services');
+
+        $kernel->resetServices();
+    }
+
     public function test_reset_services_resets_a_resolved_shared_resettable_service(): void
     {
         $service = new class implements \Georgeff\Kernel\Contract\ResettableInterface {
@@ -1907,6 +1956,29 @@ class KernelTest extends TestCase
         $kernel->resetServices();
 
         $this->assertSame(5, $service->count);
+    }
+
+    public function test_shutdown_clears_service_resetter_failure_state(): void
+    {
+        $service = new class implements \Georgeff\Kernel\Contract\ResettableInterface {
+            public function reset(): void { throw new \RuntimeException('boom'); }
+        };
+
+        $kernel = new Kernel(new Testing(), debug: true);
+        $kernel->define('my.service', fn() => $service)->share();
+        $kernel->boot();
+        $kernel->getContainer()->get('my.service');
+
+        // One failure, well below the default threshold of 3 — logged, not thrown.
+        $kernel->resetServices();
+
+        $this->assertNotEmpty($kernel->getDebugInfo()['service.resetter']['failures']);
+        $this->assertNotEmpty($kernel->getDebugInfo()['service.resetter']['logs']);
+
+        $kernel->shutdown();
+
+        $this->assertSame([], $kernel->getDebugInfo()['service.resetter']['failures']);
+        $this->assertSame([], $kernel->getDebugInfo()['service.resetter']['logs']);
     }
 
     private function createContainerBuilderMock(): ContainerBuilderInterface&\PHPUnit\Framework\MockObject\MockObject

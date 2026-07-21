@@ -27,6 +27,10 @@ All notable changes to `georgeff/kernel` are documented here.
 - `ModuleException::throwOnRegistrationError()` / `throwOnBootError()` — wrap an unexpected throwable from a module's `register()`/`boot()` with the original preserved as `$previous`; a thrown `KernelExceptionInterface` or `ContainerExceptionInterface` passes through unwrapped instead of being re-wrapped
 - `HookException` — thrown when a lifecycle callback (`onBooting`/`onBooted`/`onShutdown`/`afterShutdown`) fails; `throwOnCallbackError()` wraps a single failure, `throwOnCallbackErrors()` aggregates multiple into one message (used by the shutdown hooks — see the `Changed` entry below)
 - A `garbageCollection` boot phase (after `postBoot`) that clears `DefinitionRepository`'s, `ModuleLoader`'s, and `HookRepository`'s boot-only working state (`onBooting`/`onBooted` callbacks, consumed once boot completes), for long-running processes that keep a `Kernel` instance alive after `boot()` returns. `onShutdown`/`afterShutdown` callbacks are deliberately left uncleared by this phase, since they haven't run yet at that point
+- `shutdown()` now does real cleanup work, not just callback invocation: the built container is released, `DI\ServiceResetter`'s tracked services and failure history are cleared, and the whole thing is profiled (in debug mode) under a new `shutdown.profile` key in `getDebugInfo()`, with `shutdown` and `afterShutdown` phases. If an `onShutdown` callback fails, none of this cleanup runs and `isShutdown()` stays `false` — shutdown either completes in full or is treated as not having happened, consistent with the callback-failure handling described below
+- `Kernel::getContainer()` and `Kernel::resetServices()` now throw `KernelException` if called after `shutdown()`, in addition to their existing before-boot guards
+- `Debug\Profiler::getStartTime(): float` — returns the value passed to `start()`, or `-INF` if `start()` hasn't been called
+- `Kernel::initProfiler()` changed from `private` to `protected` and now returns `?Debug\Profiler` instead of assigning to a property directly; `Kernel::profile()` takes the profiler as an explicit parameter rather than reading a specific property, so subclasses can reuse the same phase-timing mechanism for their own profiling needs
 
 ### Changed
 - **Breaking:** `KernelInterface::getEnvironment()` return type changed from `string` to `EnvironmentInterface`
@@ -40,6 +44,7 @@ All notable changes to `georgeff/kernel` are documented here.
 - `KernelException::throw()`/`throwIf()`/`throwIfNot()` gained an optional `$previous` parameter (`throw()` previously took no `$previous` at all)
 - Lifecycle callback failure handling: a failing `onBooting`/`onBooted` callback still aborts immediately (matching boot's sequential, order-dependent nature), but a raw non-`KernelExceptionInterface`/`ContainerExceptionInterface` throwable is now wrapped in `HookException` rather than propagating unwrapped. `onShutdown`/`afterShutdown` callbacks now run to completion even if an earlier one throws — all failures are collected and reported together in a single aggregated `HookException` once every callback has had a chance to run, instead of the first failure aborting the rest of shutdown
 - `KernelInterface::boot()`/`shutdown()` now document `@throws KernelExceptionInterface`
+- `getDebugInfo()`'s `bootProfile` key renamed to `boot.profile`, matching the dot-notation naming already used by `service.resetter` and the new `shutdown.profile`
 - Dropped PHP 8.2 and 8.3 support — now requires `php: ^8.4`
 
 ### Removed
