@@ -11,7 +11,7 @@ use Georgeff\Kernel\Contract\ContainerBuilderInterface;
 
 class Kernel implements KernelInterface
 {
-    protected ?Profiler\Profiler $profiler = null;
+    protected private(set) ?Profiler\Profiler $profiler = null;
 
     private ?ContainerInterface $container = null;
 
