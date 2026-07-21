@@ -640,6 +640,13 @@ class KernelTest extends TestCase
         $this->assertSame(-INF, $kernel->getStartTime());
     }
 
+    public function test_get_start_time_returns_negative_infinity_before_boot_with_debug(): void
+    {
+        $kernel = new Kernel(new Testing(), debug: true);
+
+        $this->assertSame(-INF, $kernel->getStartTime());
+    }
+
     public function test_it_uses_default_container_builder(): void
     {
         $kernel = new Kernel(new Testing());
@@ -676,15 +683,25 @@ class KernelTest extends TestCase
 
         $info = $kernel->getDebugInfo();
 
-        $this->assertArrayHasKey('boot.profile', $info);
-        $this->assertArrayHasKey('start.time', $info['boot.profile']);
-        $this->assertArrayHasKey('end.time', $info['boot.profile']);
-        $this->assertArrayHasKey('duration', $info['boot.profile']);
-        $this->assertArrayHasKey('phases', $info['boot.profile']);
-        $this->assertArrayHasKey('preBoot', $info['boot.profile']['phases']);
-        $this->assertArrayHasKey('serviceDecoration', $info['boot.profile']['phases']);
-        $this->assertArrayHasKey('serviceRegistration', $info['boot.profile']['phases']);
-        $this->assertArrayHasKey('containerInit', $info['boot.profile']['phases']);
+        $this->assertArrayHasKey('boot', $info['profiles']);
+        $this->assertArrayHasKey('start.time', $info['profiles']['boot']);
+        $this->assertArrayHasKey('end.time', $info['profiles']['boot']);
+        $this->assertArrayHasKey('duration', $info['profiles']['boot']);
+        $this->assertArrayHasKey('phases', $info['profiles']['boot']);
+        $this->assertArrayHasKey('preBoot', $info['profiles']['boot']['phases']);
+        $this->assertArrayHasKey('serviceDecoration', $info['profiles']['boot']['phases']);
+        $this->assertArrayHasKey('serviceRegistration', $info['profiles']['boot']['phases']);
+        $this->assertArrayHasKey('containerInit', $info['profiles']['boot']['phases']);
+    }
+
+    public function test_get_debug_info_boot_profile_duration_is_set_after_boot(): void
+    {
+        $kernel = new Kernel(new Testing(), debug: true);
+        $kernel->boot();
+
+        $duration = $kernel->getDebugInfo()['profiles']['boot']['duration'];
+
+        $this->assertIsFloat($duration);
     }
 
     public function test_get_debug_info_omits_shutdown_profile_before_shutdown(): void
@@ -692,7 +709,7 @@ class KernelTest extends TestCase
         $kernel = new Kernel(new Testing(), debug: true);
         $kernel->boot();
 
-        $this->assertArrayNotHasKey('shutdown.profile', $kernel->getDebugInfo());
+        $this->assertArrayNotHasKey('shutdown', $kernel->getDebugInfo()['profiles']);
     }
 
     public function test_get_debug_info_returns_shutdown_profile_after_shutdown(): void
@@ -703,13 +720,24 @@ class KernelTest extends TestCase
 
         $info = $kernel->getDebugInfo();
 
-        $this->assertArrayHasKey('shutdown.profile', $info);
-        $this->assertArrayHasKey('start.time', $info['shutdown.profile']);
-        $this->assertArrayHasKey('end.time', $info['shutdown.profile']);
-        $this->assertArrayHasKey('duration', $info['shutdown.profile']);
-        $this->assertArrayHasKey('phases', $info['shutdown.profile']);
-        $this->assertArrayHasKey('shutdown', $info['shutdown.profile']['phases']);
-        $this->assertArrayHasKey('afterShutdown', $info['shutdown.profile']['phases']);
+        $this->assertArrayHasKey('shutdown', $info['profiles']);
+        $this->assertArrayHasKey('start.time', $info['profiles']['shutdown']);
+        $this->assertArrayHasKey('end.time', $info['profiles']['shutdown']);
+        $this->assertArrayHasKey('duration', $info['profiles']['shutdown']);
+        $this->assertArrayHasKey('phases', $info['profiles']['shutdown']);
+        $this->assertArrayHasKey('shuttingDown', $info['profiles']['shutdown']['phases']);
+        $this->assertArrayHasKey('afterShutdown', $info['profiles']['shutdown']['phases']);
+    }
+
+    public function test_get_debug_info_shutdown_profile_duration_is_set_after_shutdown(): void
+    {
+        $kernel = new Kernel(new Testing(), debug: true);
+        $kernel->boot();
+        $kernel->shutdown();
+
+        $duration = $kernel->getDebugInfo()['profiles']['shutdown']['duration'];
+
+        $this->assertIsFloat($duration);
     }
 
     public function test_profile_phase_is_stopped_even_when_callback_throws(): void
@@ -729,16 +757,26 @@ class KernelTest extends TestCase
         } catch (\RuntimeException) {
         }
 
-        $duration = $kernel->getDebugInfo()['boot.profile']['phases']['moduleRegistration']['duration'];
+        $duration = $kernel->getDebugInfo()['profiles']['boot']['phases']['moduleRegistration']['duration'];
 
         $this->assertIsFloat($duration);
     }
 
-    public function test_get_debug_info_returns_empty_array_before_boot(): void
+    public function test_get_debug_info_returns_empty_array_before_boot_without_debug(): void
+    {
+        $kernel = new Kernel(new Testing());
+
+        $this->assertSame([], $kernel->getDebugInfo());
+    }
+
+    public function test_get_debug_info_before_boot_has_no_profiles_or_service_resolution_yet(): void
     {
         $kernel = new Kernel(new Testing(), debug: true);
 
-        $this->assertSame([], $kernel->getDebugInfo());
+        $info = $kernel->getDebugInfo();
+
+        $this->assertArrayNotHasKey('profiles', $info);
+        $this->assertArrayNotHasKey('service.resolution', $info);
     }
 
     public function test_get_debug_info_returns_service_resolution_profile_in_debug_mode(): void
@@ -749,9 +787,9 @@ class KernelTest extends TestCase
 
         $info = $kernel->getDebugInfo();
 
-        $this->assertArrayHasKey('services', $info);
-        $this->assertArrayHasKey('resolved', $info['services']);
-        $this->assertArrayHasKey('unresolved', $info['services']);
+        $this->assertArrayHasKey('service.resolution', $info);
+        $this->assertArrayHasKey('resolved', $info['service.resolution']);
+        $this->assertArrayHasKey('unresolved', $info['service.resolution']);
     }
 
     public function test_get_debug_info_includes_service_resetter_info_alongside_service_resolution(): void
@@ -767,11 +805,15 @@ class KernelTest extends TestCase
         $this->assertArrayHasKey('logs', $info['service.resetter']);
     }
 
-    public function test_get_debug_info_omits_service_resetter_before_boot(): void
+    public function test_get_debug_info_includes_service_resetter_before_boot(): void
     {
         $kernel = new Kernel(new Testing(), debug: true);
 
-        $this->assertArrayNotHasKey('service.resetter', $kernel->getDebugInfo());
+        $info = $kernel->getDebugInfo();
+
+        $this->assertArrayHasKey('service.resetter', $info);
+        $this->assertSame([], $info['service.resetter']['failures']);
+        $this->assertSame([], $info['service.resetter']['logs']);
     }
 
     public function test_get_debug_info_tracks_resolved_services(): void
@@ -784,7 +826,7 @@ class KernelTest extends TestCase
 
         $info = $kernel->getDebugInfo();
 
-        $this->assertArrayHasKey('foo', $info['services']['resolved']);
+        $this->assertArrayHasKey('foo', $info['service.resolution']['resolved']);
     }
 
     public function test_get_debug_info_includes_debug_info_from_debuggable_resolved_service(): void
@@ -804,8 +846,8 @@ class KernelTest extends TestCase
 
         $info = $kernel->getDebugInfo();
 
-        $this->assertArrayHasKey('debugInfo', $info['services']['resolved']['foo']);
-        $this->assertSame(['custom' => 'data'], $info['services']['resolved']['foo']['debugInfo']);
+        $this->assertArrayHasKey('debugInfo', $info['service.resolution']['resolved']['foo']);
+        $this->assertSame(['custom' => 'data'], $info['service.resolution']['resolved']['foo']['debugInfo']);
     }
 
     public function test_kernel_implements_debuggable_interface(): void
@@ -1137,7 +1179,7 @@ class KernelTest extends TestCase
         $kernel = new Kernel(new Testing(), debug: true);
         $kernel->boot();
 
-        $phases = $kernel->getDebugInfo()['boot.profile']['phases'];
+        $phases = $kernel->getDebugInfo()['profiles']['boot']['phases'];
 
         $this->assertArrayHasKey('moduleLoad', $phases);
         $this->assertArrayHasKey('moduleRegistration', $phases);

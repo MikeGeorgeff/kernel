@@ -1,13 +1,13 @@
 <?php
 
-namespace Georgeff\Kernel\Debug;
+namespace Georgeff\Kernel\Profiler;
 
 use Georgeff\Kernel\Contract\DebuggableInterface;
 
 /**
  * @internal
  */
-final class Profiler implements DebuggableInterface
+final class Profile implements DebuggableInterface
 {
     /**
      * Global timer

@@ -598,25 +598,25 @@ $kernel = new Kernel(new Development(), debug: true);
 $kernel->boot();
 
 $kernel->getStartTime(); // float (microtime)
-$kernel->getDebugInfo(); // boot profile + service resolution + resetter data
+$kernel->getDebugInfo(); // profiles + module/service-resolution/resetter data, merged by Profiler\Profiler
 ```
 
 The `getDebugInfo()` array contains:
 
-- `boot.profile` — timing for each boot phase
-- `modules` — module loader state: which module classes were added and whether each phase has run
-- `services` — which services have been resolved and which remain unresolved; each resolved entry includes a `resolutionCount` and, for services implementing `DebuggableInterface`, a `debugInfo` key
-- `service.resetter` — failure counts and logged exception messages per service id, for services that have failed a `reset()` at least once
-- `shutdown.profile` — timing for the `shutdown` and `afterShutdown` phases; only present once `shutdown()` has actually been called
+- `profiles.boot` — timing for each boot phase
+- `profiles.shutdown` — timing for the `shuttingDown` and `afterShutdown` phases; only present once `shutdown()` has actually been called
+- `modules` — module loader state: which module classes were added and whether each phase has run; present as soon as debug mode is enabled, even before `boot()` is called
+- `service.resolution` — which services have been resolved and which remain unresolved; each resolved entry includes a `resolutionCount` and, for services implementing `DebuggableInterface`, a `debugInfo` key; only present once `boot()` has run
+- `service.resetter` — failure counts and logged exception messages per service id, for services that have failed a `reset()` at least once; present as soon as debug mode is enabled, even before `boot()` is called
 
 When debug is disabled, `getStartTime()` returns `-INF` and `getDebugInfo()` returns `[]`.
 
 #### DebuggableInterface
 
-Services can implement `DebuggableInterface` to expose debug data. In debug mode, their `getDebugInfo()` output is collected automatically after each factory resolution and included in the kernel's debug info under `services.resolved`:
+Services can implement `DebuggableInterface` to expose debug data. In debug mode, their `getDebugInfo()` output is collected automatically after each factory resolution and included in the kernel's debug info under `service.resolution.resolved`:
 
 ```php
-use Georgeff\Kernel\Debug\DebuggableInterface;
+use Georgeff\Kernel\Contract\DebuggableInterface;
 
 final class ConnectionPool implements DebuggableInterface
 {
