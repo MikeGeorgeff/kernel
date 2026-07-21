@@ -6,11 +6,13 @@ use Throwable;
 
 final class ServiceResetException extends \RuntimeException implements KernelExceptionInterface
 {
+    use ThrowHelpers;
+
     public static function fail(string $service, Throwable $exception): never
     {
-        throw new self(
+        self::throw(
             "Reset failure threshold for service [$service] exceeded",
-            previous: $exception
+            $exception
         );
     }
 }

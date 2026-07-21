@@ -2,4 +2,9 @@
 
 namespace Georgeff\Kernel\Exception;
 
-final class EnvironmentException extends \RuntimeException implements KernelExceptionInterface {}
+use Throwable;
+
+final class EnvironmentException extends \RuntimeException implements KernelExceptionInterface
+{
+    use ThrowHelpers;
+}
