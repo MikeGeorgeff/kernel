@@ -49,6 +49,7 @@ All notable changes to `georgeff/kernel` are documented here.
 - `KernelInterface::boot()`/`shutdown()` now document `@throws KernelExceptionInterface`
 - `getDebugInfo()`'s profile data moved from a flat `bootProfile` key to `profiles.boot`, nested under a `profiles` map alongside the new `profiles.shutdown`; service resolution data moved from `services` to `components.service.resolution`. `components.modules` and `components.service.resetter` are registered against the profiler at kernel construction time when debug mode is enabled, so both are present in `getDebugInfo()` immediately — even before `boot()` is called — rather than only appearing once boot/resolution has actually happened
 - `Kernel::getStartTime()` now checks `hasProfile('boot')` before calling `getProfile('boot')`, so it safely returns `-INF` when debug mode is enabled but `boot()` hasn't run yet, instead of throwing `ProfilerException`
+- `Kernel::$profiler` uses PHP 8.4 asymmetric visibility (`protected private(set)`): readable by subclasses, but only `Kernel` itself can assign to it
 - Dropped PHP 8.2 and 8.3 support — now requires `php: ^8.4`
 
 ### Removed

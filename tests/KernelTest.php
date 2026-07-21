@@ -22,6 +22,7 @@ use Georgeff\Kernel\Exception\KernelException;
 use Georgeff\Kernel\Exception\ModuleException;
 use Georgeff\Kernel\Kernel;
 use Georgeff\Kernel\KernelInterface;
+use Georgeff\Kernel\Profiler\Profiler;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
 
@@ -614,6 +615,36 @@ class KernelTest extends TestCase
         $this->expectExceptionMessage('Kernel has already been booted, cannot add new post-resolution callbacks');
 
         $kernel->onResolved(function () {});
+    }
+
+    // -------------------------------------------------------------------------
+    // $profiler visibility (asymmetric property scoping)
+    // -------------------------------------------------------------------------
+
+    public function test_profiler_property_is_readable_by_child_kernels(): void
+    {
+        $kernel = new class (new Testing(), debug: true) extends Kernel {
+            public function exposeProfiler(): ?Profiler
+            {
+                return $this->profiler;
+            }
+        };
+
+        $this->assertInstanceOf(Profiler::class, $kernel->exposeProfiler());
+    }
+
+    public function test_profiler_property_cannot_be_overwritten_by_child_kernels(): void
+    {
+        $kernel = new class (new Testing(), debug: true) extends Kernel {
+            public function overwriteProfiler(): void
+            {
+                $this->profiler = new Profiler();
+            }
+        };
+
+        $this->expectException(\Error::class);
+
+        $kernel->overwriteProfiler();
     }
 
     public function test_get_start_time_returns_negative_infinity_when_not_debug(): void

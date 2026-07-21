@@ -681,6 +681,8 @@ class ConsoleKernel extends Kernel implements RunnableKernelInterface
 }
 ```
 
+`Kernel::$profiler` (`protected private(set) ?Profiler\Profiler`) uses PHP 8.4 asymmetric visibility: a subclass can read it — e.g. to inspect an active profile or register its own `DebuggableInterface` components — but only `Kernel` itself can assign to it.
+
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md).
