@@ -527,7 +527,7 @@ Shutdown runs in this order:
 
 If an `onShutdown` callback throws, none of the following steps run — the container isn't released, `isShutdown()` stays `false`, and `afterShutdown` callbacks don't run. Shutdown either completes in full or is treated as not having happened at all, so a caller that catches the failure still has a working kernel rather than a half-torn-down one.
 
-After shutdown, `getContainer()` and `resetServices()` both throw `KernelException` — there's nothing left to resolve or reset.
+After shutdown, `getContainer()` and `resetShared()` both throw `KernelException` — there's nothing left to resolve or reset.
 
 ### Garbage Collection
 
@@ -555,7 +555,7 @@ Calling `enableGc()` more than once (e.g. two modules both opting in) is safe �
 
 ### Resetting Services
 
-For long-running processes (workers, daemons) that want a clean slate between units of work, `resetServices()` resets every resolved shared service that implements `Contract\ResettableInterface` back to its original state:
+For long-running processes (workers, daemons) that want a clean slate between units of work, `resetShared()` resets every resolved shared service that implements `Contract\ResettableInterface` back to its original state:
 
 ```php
 use Georgeff\Kernel\Contract\ResettableInterface;
@@ -573,16 +573,16 @@ $kernel->boot();
 
 $kernel->getContainer()->get(ConnectionPool::class);
 
-$kernel->resetServices();
+$kernel->resetShared();
 // ConnectionPool::reset() was called automatically — no manual tagging required.
 ```
 
-Detection is automatic: any resolved, shared service implementing `ResettableInterface` is tracked the moment it's resolved through the container. `resetServices()` throws `KernelException` if called before boot.
+Detection is automatic: any resolved, shared service implementing `ResettableInterface` is tracked the moment it's resolved through the container. `resetShared()` throws `KernelException` if called before boot.
 
-A service's `reset()` is allowed to fail up to a threshold before `resetServices()` gives up on it entirely and throws `ServiceResetException`. The default threshold is 3, passed as an argument:
+A service's `reset()` is allowed to fail up to a threshold before `resetShared()` gives up on it entirely and throws `ServiceResetException`. The default threshold is 3, passed as an argument:
 
 ```php
-$kernel->resetServices(failureThreshold: 5);
+$kernel->resetShared(failureThreshold: 5);
 ```
 
 An individual service can override the default by implementing `ThresholdAwareResettableInterface`:
@@ -601,7 +601,7 @@ final class FlakyCache implements ThresholdAwareResettableInterface
 }
 ```
 
-Failures are tracked per container id (not per class, so the same class backing two different ids is tracked independently) and accumulate across separate calls to `resetServices()` until a successful reset clears that service's failure history.
+Failures are tracked per container id (not per class, so the same class backing two different ids is tracked independently) and accumulate across separate calls to `resetShared()` until a successful reset clears that service's failure history.
 
 ### Custom Container Builder
 
@@ -667,7 +667,7 @@ try {
 }
 ```
 
-`KernelException` (general kernel-state guards), `ModuleException` (module lifecycle), `ConfigException` (`Config::branch()`), `DefinitionException` (`DefinitionRepository` guards), `EnvironmentException` (`EnvironmentResolver`), `HookException` (a lifecycle callback failing — see [Lifecycle Callbacks](#lifecycle-callbacks)), and `ServiceResetException` (`resetServices()`) each provide static helpers via the shared `Exception\ThrowHelpers` trait:
+`KernelException` (general kernel-state guards), `ModuleException` (module lifecycle), `ConfigException` (`Config::branch()`), `DefinitionException` (`DefinitionRepository` guards), `EnvironmentException` (`EnvironmentResolver`), `HookException` (a lifecycle callback failing — see [Lifecycle Callbacks](#lifecycle-callbacks)), and `ServiceResetException` (`resetShared()`) each provide static helpers via the shared `Exception\ThrowHelpers` trait:
 
 ```php
 use Georgeff\Kernel\Exception\KernelException;

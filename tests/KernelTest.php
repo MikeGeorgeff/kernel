@@ -2049,30 +2049,30 @@ class KernelTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // resetServices()
+    // resetShared()
     // -------------------------------------------------------------------------
 
-    public function test_reset_services_returns_the_kernel(): void
+    public function test_reset_shared_returns_the_kernel(): void
     {
         $kernel = new Kernel(new Testing());
         $kernel->boot();
 
-        $result = $kernel->resetServices();
+        $result = $kernel->resetShared();
 
         $this->assertSame($kernel, $result);
     }
 
-    public function test_reset_services_throws_before_boot(): void
+    public function test_reset_shared_throws_before_boot(): void
     {
         $kernel = new Kernel(new Testing());
 
         $this->expectException(KernelException::class);
         $this->expectExceptionMessage('Kernel has not been booted, cannot reset shared services');
 
-        $kernel->resetServices();
+        $kernel->resetShared();
     }
 
-    public function test_reset_services_throws_after_shutdown(): void
+    public function test_reset_shared_throws_after_shutdown(): void
     {
         $kernel = new Kernel(new Testing());
         $kernel->boot();
@@ -2081,10 +2081,10 @@ class KernelTest extends TestCase
         $this->expectException(KernelException::class);
         $this->expectExceptionMessage('Kernel is shutdown, cannot reset shared services');
 
-        $kernel->resetServices();
+        $kernel->resetShared();
     }
 
-    public function test_reset_services_resets_a_resolved_shared_resettable_service(): void
+    public function test_reset_shared_resets_a_resolved_shared_resettable_service(): void
     {
         $service = new class implements \Georgeff\Kernel\Contract\ResettableInterface {
             public int $count = 0;
@@ -2101,12 +2101,12 @@ class KernelTest extends TestCase
         $resolved = $kernel->getContainer()->get('my.service');
         $resolved->count = 5;
 
-        $kernel->resetServices();
+        $kernel->resetShared();
 
         $this->assertSame(0, $resolved->count);
     }
 
-    public function test_reset_services_does_not_reset_a_service_that_was_never_resolved(): void
+    public function test_reset_shared_does_not_reset_a_service_that_was_never_resolved(): void
     {
         $service = new class implements \Georgeff\Kernel\Contract\ResettableInterface {
             public int $count = 5;
@@ -2121,12 +2121,12 @@ class KernelTest extends TestCase
         $kernel->boot();
 
         // Never resolved via $kernel->getContainer()->get('my.service')
-        $kernel->resetServices();
+        $kernel->resetShared();
 
         $this->assertSame(5, $service->count);
     }
 
-    public function test_reset_services_does_not_reset_a_non_shared_resettable_service(): void
+    public function test_reset_shared_does_not_reset_a_non_shared_resettable_service(): void
     {
         $service = new class implements \Georgeff\Kernel\Contract\ResettableInterface {
             public int $count = 0;
@@ -2143,12 +2143,12 @@ class KernelTest extends TestCase
         $resolved = $kernel->getContainer()->get('my.service');
         $resolved->count = 5;
 
-        $kernel->resetServices();
+        $kernel->resetShared();
 
         $this->assertSame(5, $resolved->count);
     }
 
-    public function test_reset_services_does_not_reset_a_non_resettable_service(): void
+    public function test_reset_shared_does_not_reset_a_non_resettable_service(): void
     {
         $service = new \stdClass();
         $service->count = 5;
@@ -2158,7 +2158,7 @@ class KernelTest extends TestCase
         $kernel->boot();
 
         $kernel->getContainer()->get('my.service');
-        $kernel->resetServices();
+        $kernel->resetShared();
 
         $this->assertSame(5, $service->count);
     }
@@ -2178,7 +2178,7 @@ class KernelTest extends TestCase
         $kernel->getContainer()->get('my.service');
 
         // One failure, well below the default threshold of 3 — logged, not thrown.
-        $kernel->resetServices();
+        $kernel->resetShared();
 
         $this->assertNotEmpty($kernel->getDebugInfo()['components']['service.resetter']['failures']);
         $this->assertNotEmpty($kernel->getDebugInfo()['components']['service.resetter']['logs']);

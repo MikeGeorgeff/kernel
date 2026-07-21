@@ -377,7 +377,7 @@ class Kernel implements KernelInterface
         return $this->definitions->override($id, $factory, $preserve);
     }
 
-    public function resetServices(int $failureThreshold = 3): static
+    public function resetShared(int $failureThreshold = 3): static
     {
         KernelException::throwIfNot($this->isBooted(), 'Kernel has not been booted, cannot reset shared services');
 
