@@ -47,7 +47,7 @@ final class Profiler implements DebuggableInterface
     }
 
     /**
-     * Register debuggle services to merge into debug info
+     * Register debuggable services to merge into debug info
      */
     public function register(DebuggableInterface $service, ?string $name = null): void
     {
@@ -65,7 +65,7 @@ final class Profiler implements DebuggableInterface
         }
 
         foreach ($this->registry as $name => $debuggle) {
-            $output[$name] = $debuggle->getDebugInfo();
+            $output['components'][$name] = $debuggle->getDebugInfo();
         }
 
         return $output;

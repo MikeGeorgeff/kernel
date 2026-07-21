@@ -102,7 +102,7 @@ class ProfilerTest extends TestCase
 
         $profiler->register($debuggable, 'my.service');
 
-        $this->assertSame(['custom' => 'info'], $profiler->getDebugInfo()['my.service']);
+        $this->assertSame(['custom' => 'info'], $profiler->getDebugInfo()['components']['my.service']);
     }
 
     public function test_register_defaults_to_the_service_class_name_when_no_name_given(): void
@@ -114,7 +114,7 @@ class ProfilerTest extends TestCase
 
         $profiler->register($debuggable);
 
-        $this->assertArrayHasKey($debuggable::class, $profiler->getDebugInfo());
+        $this->assertArrayHasKey($debuggable::class, $profiler->getDebugInfo()['components']);
     }
 
     public function test_register_overwrites_a_previous_registration_under_the_same_name(): void
@@ -130,7 +130,7 @@ class ProfilerTest extends TestCase
         $profiler->register($first, 'my.service');
         $profiler->register($second, 'my.service');
 
-        $this->assertSame(['which' => 'second'], $profiler->getDebugInfo()['my.service']);
+        $this->assertSame(['which' => 'second'], $profiler->getDebugInfo()['components']['my.service']);
     }
 
     // -------------------------------------------------------------------------
@@ -154,12 +154,30 @@ class ProfilerTest extends TestCase
         $this->assertArrayNotHasKey('profiles', $profiler->getDebugInfo());
     }
 
+    public function test_get_debug_info_omits_the_components_key_when_nothing_has_been_registered(): void
+    {
+        $profiler = new Profiler();
+        $profiler->initProfile('boot');
+
+        $this->assertArrayNotHasKey('components', $profiler->getDebugInfo());
+    }
+
     public function test_get_debug_info_includes_profiles_under_the_profiles_key_by_name(): void
     {
         $profiler = new Profiler();
         $profiler->initProfile('boot');
 
         $this->assertArrayHasKey('boot', $profiler->getDebugInfo()['profiles']);
+    }
+
+    public function test_get_debug_info_nests_registered_debuggables_under_the_components_key(): void
+    {
+        $profiler = new Profiler();
+        $profiler->register(new class implements DebuggableInterface {
+            public function getDebugInfo(): array { return ['loaded' => true]; }
+        }, 'modules');
+
+        $this->assertSame(['loaded' => true], $profiler->getDebugInfo()['components']['modules']);
     }
 
     public function test_get_debug_info_merges_multiple_profiles_and_registered_debuggables(): void
@@ -175,6 +193,6 @@ class ProfilerTest extends TestCase
 
         $this->assertArrayHasKey('boot', $info['profiles']);
         $this->assertArrayHasKey('shutdown', $info['profiles']);
-        $this->assertSame(['loaded' => true], $info['modules']);
+        $this->assertSame(['loaded' => true], $info['components']['modules']);
     }
 }

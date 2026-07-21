@@ -776,7 +776,7 @@ class KernelTest extends TestCase
         $info = $kernel->getDebugInfo();
 
         $this->assertArrayNotHasKey('profiles', $info);
-        $this->assertArrayNotHasKey('service.resolution', $info);
+        $this->assertArrayNotHasKey('service.resolution', $info['components']);
     }
 
     public function test_get_debug_info_returns_service_resolution_profile_in_debug_mode(): void
@@ -787,9 +787,9 @@ class KernelTest extends TestCase
 
         $info = $kernel->getDebugInfo();
 
-        $this->assertArrayHasKey('service.resolution', $info);
-        $this->assertArrayHasKey('resolved', $info['service.resolution']);
-        $this->assertArrayHasKey('unresolved', $info['service.resolution']);
+        $this->assertArrayHasKey('service.resolution', $info['components']);
+        $this->assertArrayHasKey('resolved', $info['components']['service.resolution']);
+        $this->assertArrayHasKey('unresolved', $info['components']['service.resolution']);
     }
 
     public function test_get_debug_info_includes_service_resetter_info_alongside_service_resolution(): void
@@ -800,9 +800,9 @@ class KernelTest extends TestCase
 
         $info = $kernel->getDebugInfo();
 
-        $this->assertArrayHasKey('service.resetter', $info);
-        $this->assertArrayHasKey('failures', $info['service.resetter']);
-        $this->assertArrayHasKey('logs', $info['service.resetter']);
+        $this->assertArrayHasKey('service.resetter', $info['components']);
+        $this->assertArrayHasKey('failures', $info['components']['service.resetter']);
+        $this->assertArrayHasKey('logs', $info['components']['service.resetter']);
     }
 
     public function test_get_debug_info_includes_service_resetter_before_boot(): void
@@ -811,9 +811,9 @@ class KernelTest extends TestCase
 
         $info = $kernel->getDebugInfo();
 
-        $this->assertArrayHasKey('service.resetter', $info);
-        $this->assertSame([], $info['service.resetter']['failures']);
-        $this->assertSame([], $info['service.resetter']['logs']);
+        $this->assertArrayHasKey('service.resetter', $info['components']);
+        $this->assertSame([], $info['components']['service.resetter']['failures']);
+        $this->assertSame([], $info['components']['service.resetter']['logs']);
     }
 
     public function test_get_debug_info_tracks_resolved_services(): void
@@ -826,7 +826,7 @@ class KernelTest extends TestCase
 
         $info = $kernel->getDebugInfo();
 
-        $this->assertArrayHasKey('foo', $info['service.resolution']['resolved']);
+        $this->assertArrayHasKey('foo', $info['components']['service.resolution']['resolved']);
     }
 
     public function test_get_debug_info_includes_debug_info_from_debuggable_resolved_service(): void
@@ -846,8 +846,8 @@ class KernelTest extends TestCase
 
         $info = $kernel->getDebugInfo();
 
-        $this->assertArrayHasKey('debugInfo', $info['service.resolution']['resolved']['foo']);
-        $this->assertSame(['custom' => 'data'], $info['service.resolution']['resolved']['foo']['debugInfo']);
+        $this->assertArrayHasKey('debugInfo', $info['components']['service.resolution']['resolved']['foo']);
+        $this->assertSame(['custom' => 'data'], $info['components']['service.resolution']['resolved']['foo']['debugInfo']);
     }
 
     public function test_kernel_implements_debuggable_interface(): void
@@ -1194,11 +1194,11 @@ class KernelTest extends TestCase
 
         $info = $kernel->getDebugInfo();
 
-        $this->assertArrayHasKey('modules', $info);
-        $this->assertArrayHasKey('loaded', $info['modules']);
-        $this->assertArrayHasKey('registered', $info['modules']);
-        $this->assertArrayHasKey('booted', $info['modules']);
-        $this->assertArrayHasKey('modules', $info['modules']);
+        $this->assertArrayHasKey('modules', $info['components']);
+        $this->assertArrayHasKey('loaded', $info['components']['modules']);
+        $this->assertArrayHasKey('registered', $info['components']['modules']);
+        $this->assertArrayHasKey('booted', $info['components']['modules']);
+        $this->assertArrayHasKey('modules', $info['components']['modules']);
     }
 
     // -------------------------------------------------------------------------
@@ -2044,13 +2044,13 @@ class KernelTest extends TestCase
         // One failure, well below the default threshold of 3 — logged, not thrown.
         $kernel->resetServices();
 
-        $this->assertNotEmpty($kernel->getDebugInfo()['service.resetter']['failures']);
-        $this->assertNotEmpty($kernel->getDebugInfo()['service.resetter']['logs']);
+        $this->assertNotEmpty($kernel->getDebugInfo()['components']['service.resetter']['failures']);
+        $this->assertNotEmpty($kernel->getDebugInfo()['components']['service.resetter']['logs']);
 
         $kernel->shutdown();
 
-        $this->assertSame([], $kernel->getDebugInfo()['service.resetter']['failures']);
-        $this->assertSame([], $kernel->getDebugInfo()['service.resetter']['logs']);
+        $this->assertSame([], $kernel->getDebugInfo()['components']['service.resetter']['failures']);
+        $this->assertSame([], $kernel->getDebugInfo()['components']['service.resetter']['logs']);
     }
 
     private function createContainerBuilderMock(): ContainerBuilderInterface&\PHPUnit\Framework\MockObject\MockObject
