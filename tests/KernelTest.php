@@ -1394,6 +1394,45 @@ class KernelTest extends TestCase
         $kernel->shutdown();
     }
 
+    public function test_is_shutdown_remains_false_when_an_on_shutdown_callback_throws(): void
+    {
+        $kernel = new Kernel(new Testing());
+        $kernel->onShutdown(function () {
+            throw new \RuntimeException('boom');
+        });
+        $kernel->boot();
+
+        try {
+            $kernel->shutdown();
+        } catch (HookException) {
+        }
+
+        // The kernel is not marked as shut down when a shutdown callback fails —
+        // shutdown did not actually complete.
+        $this->assertFalse($kernel->isShutdown());
+    }
+
+    public function test_after_shutdown_callbacks_do_not_run_when_an_on_shutdown_callback_throws(): void
+    {
+        $kernel = new Kernel(new Testing());
+        $called = false;
+
+        $kernel->onShutdown(function () {
+            throw new \RuntimeException('boom');
+        });
+        $kernel->afterShutdown(function () use (&$called) {
+            $called = true;
+        });
+        $kernel->boot();
+
+        try {
+            $kernel->shutdown();
+        } catch (HookException) {
+        }
+
+        $this->assertFalse($called);
+    }
+
     // -------------------------------------------------------------------------
     // decorate()
     // -------------------------------------------------------------------------
