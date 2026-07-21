@@ -91,9 +91,7 @@ class Kernel implements KernelInterface
         $this->initProfiler();
 
         $this->profile('preBoot', function () {
-            foreach ($this->hooks->getOnBootingCallbacks() as $callback) {
-                $callback($this);
-            }
+            $this->hooks->invokeOnBootingCallbacks($this);
         });
 
         $this->booting = true;
@@ -193,14 +191,13 @@ class Kernel implements KernelInterface
         $this->booting = false;
 
         $this->profile('postBoot', function () {
-            foreach ($this->hooks->getOnBootedCallbacks() as $callback) {
-                $callback($this);
-            }
+            $this->hooks->invokeOnBootedCallbacks($this);
         });
 
         $this->profile('garbageCollection', function () {
             $this->definitions->gc();
             $this->modules->gc();
+            $this->hooks->gc();
 
             unset($this->cache['services.shared']);
         });
@@ -213,23 +210,15 @@ class Kernel implements KernelInterface
      */
     public function shutdown(): void
     {
-        if ($this->isShutdown()) {
+        if ($this->isShutdown() || !$this->isBooted()) {
             return;
         }
 
-        if (!$this->isBooted()) {
-            return;
-        }
-
-        foreach ($this->hooks->getOnShutdownCallbacks() as $callback) {
-            $callback($this);
-        }
+        $this->hooks->invokeOnShutdownCallbacks($this);
 
         $this->shutdown = true;
 
-        foreach ($this->hooks->getAfterShutdownCallbacks() as $callback) {
-            $callback($this);
-        }
+        $this->hooks->invokeAfterShutdownCallbacks($this);
     }
 
     /**

@@ -14,6 +14,8 @@ interface KernelInterface extends Debug\DebuggableInterface
      * Boot the kernel
      *
      * @return void
+     *
+     * @throws KernelExceptionInterface
      */
     public function boot(): void;
 
@@ -21,6 +23,8 @@ interface KernelInterface extends Debug\DebuggableInterface
      * Shutdown the kernel
      *
      * @return void
+     *
+     * @throws KernelExceptionInterface
      */
     public function shutdown(): void;
 

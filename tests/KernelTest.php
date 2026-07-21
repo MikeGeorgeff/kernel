@@ -17,6 +17,7 @@ use Georgeff\Kernel\Environment\Production;
 use Georgeff\Kernel\Environment\Staging;
 use Georgeff\Kernel\Environment\Testing;
 use Georgeff\Kernel\Exception\DefinitionException;
+use Georgeff\Kernel\Exception\HookException;
 use Georgeff\Kernel\Exception\KernelException;
 use Georgeff\Kernel\Exception\ModuleException;
 use Georgeff\Kernel\Kernel;
@@ -418,6 +419,39 @@ class KernelTest extends TestCase
         $kernel->boot();
 
         $this->assertSame('added_in_booting', $kernel->getContainer()->get('dynamic'));
+    }
+
+    public function test_boot_throws_hook_exception_when_an_on_booting_callback_throws(): void
+    {
+        $kernel = new Kernel(new Testing());
+        $kernel->onBooting(function () {
+            throw new \RuntimeException('boom');
+        });
+
+        $this->expectException(HookException::class);
+        $this->expectExceptionMessage('Hook callback for [onBooting] failed: boom');
+
+        $kernel->boot();
+    }
+
+    public function test_boot_stops_at_the_first_failing_on_booted_callback(): void
+    {
+        $kernel    = new Kernel(new Testing());
+        $secondRan = false;
+
+        $kernel->onBooted(function () {
+            throw new \RuntimeException('boom');
+        });
+        $kernel->onBooted(function () use (&$secondRan) {
+            $secondRan = true;
+        });
+
+        try {
+            $kernel->boot();
+        } catch (HookException) {
+        }
+
+        $this->assertFalse($secondRan);
     }
 
     // -------------------------------------------------------------------------
@@ -1324,6 +1358,40 @@ class KernelTest extends TestCase
         $kernel->shutdown();
 
         $this->assertSame(['onShutdown', 'afterShutdown'], $order);
+    }
+
+    public function test_shutdown_runs_every_on_shutdown_callback_even_if_an_earlier_one_throws(): void
+    {
+        $kernel    = new Kernel(new Testing());
+        $secondRan = false;
+
+        $kernel->onShutdown(function () {
+            throw new \RuntimeException('boom');
+        });
+        $kernel->onShutdown(function () use (&$secondRan) {
+            $secondRan = true;
+        });
+        $kernel->boot();
+
+        try {
+            $kernel->shutdown();
+        } catch (HookException) {
+        }
+
+        $this->assertTrue($secondRan);
+    }
+
+    public function test_shutdown_throws_hook_exception_when_an_on_shutdown_callback_throws(): void
+    {
+        $kernel = new Kernel(new Testing());
+        $kernel->onShutdown(function () {
+            throw new \RuntimeException('boom');
+        });
+        $kernel->boot();
+
+        $this->expectException(HookException::class);
+
+        $kernel->shutdown();
     }
 
     // -------------------------------------------------------------------------
