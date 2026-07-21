@@ -4,6 +4,51 @@ All notable changes to `georgeff/kernel` are documented here.
 
 ---
 
+## [2.0.0] — Unreleased
+
+2.0 is a major release with several breaking changes. This entry will be finalized when 2.0.0 actually ships; it currently reflects everything merged to the `2.x` branch so far.
+
+### Added
+- `Contract\EnvironmentInterface` (`getValue(): string`, `is(string ...$values): bool`) — replaces the `Environment` enum; consumers can now define their own environments (e.g. a canary/blue-green tier) instead of being limited to fixed enum cases
+- `Environment\AbstractEnvironment` (implements `is()`) plus five concrete leaf classes — `Environment\Production`, `Environment\Staging`, `Environment\Development`, `Environment\Testing`, `Environment\Local` — replacing the old enum cases with the same string values
+- `Support\EnvironmentResolver` — name-string → `class-string<EnvironmentInterface>` registry (`register()`, `resolve()`, `registered()`); an optional convenience, not required to construct a `Kernel`
+- `Contract\AggregateModuleInterface extends ModuleInterface` with `modules(EnvironmentInterface $env): ModuleInterface[]` — a module can now compose and cascade-load other modules directly, replacing `ModuleRepositoryInterface`; recursive (an aggregate can return further aggregates), and reuses the existing module-dedup guard for cycle safety
+- `KernelInterface::getModules(): list<class-string<ModuleInterface>>` — introspection; the class names of every added module, available immediately after `addModule()`, before `boot()`
+- `Contract\ContainerBuilderInterface` (`register()`, `onResolving()`, `onResolved()`, `getContainer()`) — collapses the old `ServiceRegistrar`/`ResolvingAwareServiceRegistrar` pair into one interface; `DI\ContainerBuilder` (`@internal`) is the default implementation
+- `Kernel::defineFallback(string $id, callable $factory): DefinitionInterface` — registers a definition that's only used if nothing else defines that id by boot time; resolved in a new `serviceFallbacks` boot phase (after `moduleRegistration`, before `serviceOverrides`/`serviceDecoration`), so it's independent of module registration order either way. Multiple `defineFallback()` calls for the same id from unrelated modules do not conflict — none of them has an opinion about which implementation wins, only that something does, so the last one registered silently wins
+- `Config\ConfigInterface`/`Config\Config` — immutable module config, replacing the flat `kernel.config` array; `has()`, `get(string $name, mixed $default = null)` (checks `has()` first, so an explicitly-stored `null` is returned rather than falling back to `$default`), `isEmpty()`, and `branch(string $name): ConfigInterface` for fluent nested-array traversal (`$config->branch('db')->get('port')`) — returns an empty `ConfigInterface` for a missing key, throws `ConfigException` for anything else that isn't a non-numeric-string-keyed array (a scalar, a list, or a value with numeric-looking string keys), so a stray list value can't silently be treated as a nested config
+- `Contract\ResettableInterface` (`reset(): void`) and `Kernel::resetServices(int $failureThreshold = 3): static` — resets resolved shared services back to their original state; auto-detected via a post-resolution hook, no manual tagging required; intended for long-running processes (workers/daemons) wanting a clean slate between units of work
+- `Contract\ThresholdAwareResettableInterface extends ResettableInterface` (`getFailureThreshold(): int`) — lets an individual service override the default failure threshold passed to `resetServices()`
+- `ServiceResetException` — thrown once a service's `reset()` failure count reaches its threshold; failures are tracked per container id (not per class, so the same class backing two different ids is tracked independently) and accumulate across calls to `resetServices()` until a successful reset clears that service's history
+- `service.resetter` key in `getDebugInfo()` (failure counts + logged exception messages per service id), alongside the existing `services` key
+- `Exception\KernelExceptionInterface extends \Throwable` — marker interface implemented by every exception this package throws, so callers can catch one type regardless of which specific exception was thrown
+- `Exception\ThrowHelpers` trait (`instance()`, `throw()`, `throwIf()`, `throwIfNot()`) — shared by every concrete exception class; `throw()`/`throwIf()`/`throwIfNot()` now all accept an optional `$previous` throwable
+- `ModuleException`, `ConfigException`, `EnvironmentException`, `DefinitionException`, `ServiceResetException` — dedicated exception types (all `KernelExceptionInterface`, all `\RuntimeException`) for their respective areas, replacing generic `KernelException`/raw SPL exceptions in those spots
+- `ModuleException::throwOnRegistrationError()` / `throwOnBootError()` — wrap an unexpected throwable from a module's `register()`/`boot()` with the original preserved as `$previous`; a thrown `KernelExceptionInterface` or `ContainerExceptionInterface` passes through unwrapped instead of being re-wrapped
+- A `garbageCollection` boot phase (after `postBoot`) that clears `DefinitionRepository`'s and `ModuleLoader`'s boot-only working state, for long-running processes that keep a `Kernel` instance alive after `boot()` returns
+
+### Changed
+- **Breaking:** `KernelInterface::getEnvironment()` return type changed from `string` to `EnvironmentInterface`
+- **Breaking:** `ConfigurableModuleInterface::config()` and `AggregateModuleInterface::modules()` now receive `EnvironmentInterface $env` instead of the old `Environment` enum
+- **Breaking:** `KernelInterface extends Debug\DebuggableInterface` — `getDebugInfo()` is now part of the interface contract, not just implemented by the concrete `Kernel` class; any direct `KernelInterface` implementation (e.g. a test double) must now also implement `DebuggableInterface`
+- **Breaking:** `define()` (via `DefinitionRepository::add()`) now throws `DefinitionException` when redefining an id that's already defined, instead of silently letting the later call win. This was only ever silent because `override()` didn't exist yet when `define()` was first written — with `override()` (intentional replacement) and `defineFallback()` (define-only-if-missing) now covering those cases explicitly, `define()` no longer needs to double as a silent-overwrite mechanism and can fail loud on accidental id collisions instead
+- **Breaking:** the `kernel.*` reserved-service guard (`$reservedServices`, checked inside `define()`/`decorate()`/`override()`) is gone. `kernel`/`KernelInterface::class`, `kernel.environment`, and `kernel.debug` are no longer registered in the container at all — anything wiring a service already holds a direct reference to the kernel (via a module's `register(KernelInterface $kernel)` or the bootstrap script's own variable) and can capture `$kernel->isDebug()`/`$kernel->getEnvironment()` directly instead of resolving it from the container. `kernel.tag.registry`/`kernel.config` are replaced by `DI\TagRegistryInterface::class`/`Config\ConfigInterface::class`, registered directly by the kernel after all other definitions during the `serviceRegistration` phase instead of being protected by a hard guard
+- Module interfaces moved to the `Contract\` namespace: `Contract\ModuleInterface`, `Contract\ConfigurableModuleInterface`, `Contract\BootableModuleInterface`, `Contract\AggregateModuleInterface`
+- `Contract\RunnableKernelInterface` moved to the `Contract\` namespace and now extends `KernelInterface` directly
+- `ModuleLoader`'s internal lifecycle guards (add-after-load, register-before-load, boot-before-register) now throw `ModuleException` instead of raw `\LogicException`
+- `KernelException::throw()`/`throwIf()`/`throwIfNot()` gained an optional `$previous` parameter (`throw()` previously took no `$previous` at all)
+- Dropped PHP 8.2 and 8.3 support — now requires `php: ^8.4`
+
+### Removed
+- **Breaking:** `Environment` enum
+- **Breaking:** `addDefinition()` and standalone `Kernel::tag()` — `define(...)->share()`/`->alias()`/`->tag()` is now the only path for registering a service definition
+- **Breaking:** `ModuleRepositoryInterface` and `addRepository()` — replaced by `AggregateModuleInterface`, which lets a module compose other modules directly instead of requiring a separate top-level repository-registration step
+- **Breaking:** `kernel`, `kernel.environment`, `kernel.debug`, `kernel.config` container service IDs — see the reserved-service change above
+- **Breaking:** PSR-14 event dispatching — the `KernelBooted` event and the `psr/event-dispatcher` dependency are gone; `boot()` no longer looks for an `EventDispatcherInterface` in the container or dispatches anything after boot completes. Use `onBooted()` instead
+- Raw SPL exceptions (`\LogicException`, `\InvalidArgumentException`) are no longer thrown directly anywhere in this package
+
+---
+
 ## [1.10.1] — 2026-07-18
 
 ### Fixed

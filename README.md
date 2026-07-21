@@ -1,6 +1,6 @@
 # Kernel
 
-A lightweight application kernel with service container bootstrapping, module system, lifecycle callbacks, and PSR-14 event dispatching.
+A lightweight application kernel with service container bootstrapping, a module system, and lifecycle callbacks.
 
 ## Installation
 
@@ -13,14 +13,13 @@ composer require georgeff/kernel
 ### Basic Bootstrapping
 
 ```php
-use Georgeff\Kernel\Environment;
+use Georgeff\Kernel\Environment\Production;
 use Georgeff\Kernel\Kernel;
 
-$kernel = new Kernel(Environment::Production);
+$kernel = new Kernel(new Production());
 
-$kernel
-    ->addDefinition('logger', fn() => new FileLogger('/var/log/app.log'), shared: true)
-    ->addDefinition('mailer', fn() => new SmtpMailer('localhost'), shared: true);
+$kernel->define('logger', fn() => new FileLogger('/var/log/app.log'))->share();
+$kernel->define('mailer', fn() => new SmtpMailer('localhost'))->share();
 
 $kernel->boot();
 
@@ -30,41 +29,60 @@ $logger = $container->get('logger');
 
 ### Environments
 
-The `Environment` enum provides five application environments:
+`EnvironmentInterface` (`getValue(): string`, `is(string ...$values): bool`) replaces a fixed enum, so consumers can define their own environments. Five concrete environments ship with the package:
 
-- `Environment::Production`
-- `Environment::Staging`
-- `Environment::Development`
-- `Environment::Testing`
-- `Environment::Local`
+- `Environment\Production`
+- `Environment\Staging`
+- `Environment\Development`
+- `Environment\Testing`
+- `Environment\Local`
 
 `Local` is for local development machines. `Development` is the remote dev/integration tier.
 
 ```php
-$kernel = new Kernel(Environment::Local, debug: true);
+use Georgeff\Kernel\Environment\Local;
+use Georgeff\Kernel\Kernel;
 
-$kernel->getEnvironment(); // 'local'
-$kernel->isDebug();        // true
+$kernel = new Kernel(new Local(), debug: true);
+
+$kernel->getEnvironment()->getValue(); // 'local'
+$kernel->getEnvironment()->is('local'); // true
+$kernel->isDebug();                     // true
 ```
+
+To add your own environment, implement `EnvironmentInterface` directly or extend `AbstractEnvironment` (which already implements `is()`):
+
+```php
+use Georgeff\Kernel\Environment\AbstractEnvironment;
+
+final class Canary extends AbstractEnvironment
+{
+    public function getValue(): string
+    {
+        return 'canary';
+    }
+}
+```
+
+#### EnvironmentResolver
+
+`Support\EnvironmentResolver` is an optional convenience for resolving an environment from a string (e.g. an `APP_ENV` value) without hand-writing a switch statement. It is not required — nothing in the kernel depends on it, and `new Kernel(new Production())` works with zero awareness it exists.
+
+```php
+use Georgeff\Kernel\Support\EnvironmentResolver;
+use Georgeff\Kernel\Support\Env;
+
+$resolver = new EnvironmentResolver();
+$resolver->register('canary', Canary::class);
+
+$kernel = new Kernel($resolver->resolve(Env::get('APP_ENV', 'production')));
+```
+
+`register()` throws `EnvironmentException` if the class doesn't exist or doesn't implement `EnvironmentInterface`. `resolve()` throws `EnvironmentException` for an unregistered name.
 
 ### Service Definitions
 
-Register service definitions before booting. Each definition takes a factory callable, an optional shared flag, and optional aliases:
-
-```php
-$kernel->addDefinition(
-    'db.connection',
-    fn() => new PdoConnection($dsn, $user, $pass),
-    shared: true,
-    aliases: [ConnectionInterface::class],
-);
-```
-
-Definitions registered later with the same ID will overwrite earlier ones, allowing base definitions to be overridden.
-
-### Fluent Definition Builder
-
-`define()` is an alternative to `addDefinition()` that returns the definition for fluent configuration:
+`define()` registers a service definition and returns a `DefinitionInterface` for fluent configuration:
 
 ```php
 $kernel->define('db.connection', fn() => new PdoConnection($dsn, $user, $pass))
@@ -73,34 +91,50 @@ $kernel->define('db.connection', fn() => new PdoConnection($dsn, $user, $pass))
     ->tag('db.connections');
 ```
 
-The builder methods are:
-
 | Method | Description |
 |---|---|
 | `share()` | Register the service as a singleton |
 | `alias(string $alias)` | Add a container alias |
 | `tag(string $tag)` | Add a tag |
 
-All three return the same definition instance, so they can be chained in any order. `addDefinition()` remains available for cases where all options are known upfront.
+All three return the same definition instance, so they can be chained in any order.
+
+`define()` throws `DefinitionException` if the id is already defined — each id can only be claimed once. Use `override()` to intentionally replace an existing definition, or `defineFallback()` to register a definition that's only used if nothing else claims the id.
+
+### Service Definition Fallbacks
+
+`defineFallback()` registers a definition that's only used if nothing else defines that id by the time the kernel boots — useful for a module that wants to provide a sensible default without forcing consumers to configure it, or without conflicting with a "real" definition another module provides:
+
+```php
+$kernel->defineFallback('db.connection', fn() => new PdoConnection('sqlite::memory:'))->share();
+
+// Some other module (or the application itself) defines the real thing:
+$kernel->define('db.connection', fn() => new PdoConnection($dsn, $user, $pass))->share();
+
+$kernel->boot();
+// The real definition wins — the fallback is never used, regardless of which was registered first.
+```
+
+If nothing else defines the id, the fallback is used instead:
+
+```php
+$kernel->defineFallback('db.connection', fn() => new PdoConnection('sqlite::memory:'))->share();
+
+$kernel->boot();
+// PdoConnection('sqlite::memory:') — nothing else claimed 'db.connection'.
+```
+
+Multiple modules can register a fallback for the same id without conflict. Unlike `define()`, `defineFallback()` never throws for a duplicate id — none of the callers has an opinion about which implementation wins, only that *something* ends up satisfying the id, so the last one registered silently wins if more than one is present and nothing else defines the id outright.
+
+`defineFallback()` throws `KernelException` if called after boot.
 
 ### Definition Tags
 
-Tags group service definitions under a shared label so they can be collected and resolved together. Pass a `tags` array to `addDefinition()`:
+Tags group service definitions under a shared label so they can be collected and resolved together:
 
 ```php
-$kernel->addDefinition(
-    FirstMiddleware::class,
-    fn() => new FirstMiddleware(),
-    shared: true,
-    tags: ['http.middleware'],
-);
-
-$kernel->addDefinition(
-    SecondMiddleware::class,
-    fn() => new SecondMiddleware(),
-    shared: true,
-    tags: ['http.middleware'],
-);
+$kernel->define(FirstMiddleware::class, fn() => new FirstMiddleware())->share()->tag('http.middleware');
+$kernel->define(SecondMiddleware::class, fn() => new SecondMiddleware())->share()->tag('http.middleware');
 ```
 
 Retrieve all services for a tag via `TagRegistryInterface` after boot:
@@ -115,31 +149,14 @@ $middleware = $registry->getTagged('http.middleware');
 // [FirstMiddleware, SecondMiddleware] — resolved in registration order
 ```
 
-`tag()` is available as a standalone method for cases where the definition comes from another module or package:
-
-```php
-final class MiddlewareModule implements ModuleInterface
-{
-    public function register(KernelInterface $kernel): void
-    {
-        // Tag a service defined by a different module
-        $kernel->tag(RouterMiddleware::class, ['http.middleware']);
-    }
-}
-```
-
-Both `addDefinition()` and `tag()` throw `KernelException` if called after boot. Registering the same ID/tag pair more than once is idempotent.
+Tagging the same id with the same tag more than once is idempotent — `tag()` only adds the tag if it isn't already present.
 
 ### Service Decoration
 
 `decorate()` wraps an existing service definition with a decorator. The decorator callable receives the resolved inner service and the container:
 
 ```php
-$kernel->addDefinition(
-    LoggerInterface::class,
-    fn() => new FileLogger('/var/log/app.log'),
-    shared: true,
-);
+$kernel->define(LoggerInterface::class, fn() => new FileLogger('/var/log/app.log'))->share();
 
 $kernel->decorate(
     LoggerInterface::class,
@@ -152,7 +169,7 @@ $logger = $kernel->getContainer()->get(LoggerInterface::class);
 // TimestampLogger wrapping FileLogger
 ```
 
-The decorated service automatically inherits the original's shared flag, aliases, and tags — existing consumers resolve the decorated version transparently.
+The decorated service automatically inherits the original's shared flag, aliases, and tags — existing consumers resolve the decorated version transparently. Multiple decorators on the same id stack — the first registered wraps the original, each subsequent decorator wraps the previous result.
 
 `decorate()` can be called from a module's `register()` method to decorate a service contributed by another module. Because decoration is applied after all modules have registered, load order does not matter:
 
@@ -172,14 +189,14 @@ final class LoggingModule implements ModuleInterface
 }
 ```
 
-`decorate()` throws `KernelException` if called after boot or for a reserved service ID. A `KernelException` is also thrown at boot time if the target definition does not exist.
+`decorate()` throws `KernelException` if called after boot. A `DefinitionException` is thrown at boot time if the target definition does not exist.
 
 ### Service Overrides
 
 `override()` replaces an existing service definition outright — unlike `decorate()`, which wraps the original, `override()` swaps it for a completely different implementation. This is the tool for substituting fakes or test doubles for real services, especially ones registered by a module:
 
 ```php
-$kernel->addDefinition(QueueInterface::class, fn() => new RabbitMQQueue($config), shared: true);
+$kernel->define(QueueInterface::class, fn() => new RabbitMQQueue($config))->share();
 
 $kernel->override(QueueInterface::class, fn() => new InMemoryQueue());
 
@@ -200,24 +217,24 @@ $kernel->boot();
 // InMemoryQueue wins - the override is applied after QueueModule::register() runs
 ```
 
-Unlike `decorate()`, `override()` does not inherit the original definition's shared flag, aliases, or tags by default — the replacement may have entirely different requirements than what it's replacing (a real queue implementation might not need to be shared; an in-memory test double usually does, to accumulate state across resolutions within a request). Configure the replacement explicitly via the returned `DefinitionInterface`:
+Unlike `decorate()`, `override()` does not inherit the original definition's shared flag, aliases, or tags by default — the replacement may have entirely different requirements than what it's replacing. Configure the replacement explicitly via the returned `DefinitionInterface`:
 
 ```php
 $kernel->override(QueueInterface::class, fn() => new InMemoryQueue())->share();
 ```
 
-Pass `preserve: true` to copy the original's shared flag, aliases, and tags onto the override instead — useful when swapping an implementation without wanting to also redeclare everything else about it:
+Pass `preserve: true` to copy the original's shared flag, aliases, and tags onto the override instead:
 
 ```php
 $kernel->override(QueueInterface::class, fn() => new InMemoryQueue(), preserve: true);
 // InMemoryQueue is shared, aliased, and tagged exactly like the original QueueInterface registration
 ```
 
-`override()` throws `KernelException` if called after boot or for a reserved service ID. A `KernelException` is also thrown at boot time if the target definition does not exist — `override()` can only replace something, not create it.
+`override()` throws `KernelException` if called after boot. A `DefinitionException` is thrown at boot time if the target definition does not exist — `override()` can only replace something, not create it. An `override()` can target an id that only exists because a `defineFallback()` backfilled it, since fallbacks resolve before overrides do.
 
 ### Modules
 
-Modules are self-contained units that contribute service definitions, configuration, and boot logic to the kernel. They replace ad-hoc `addDefinition()` calls with composable, reusable pieces.
+Modules are self-contained units that contribute service definitions, configuration, and boot logic to the kernel.
 
 #### Defining a Module
 
@@ -225,47 +242,45 @@ Every module implements `ModuleInterface` with a single `register()` method:
 
 ```php
 use Georgeff\Kernel\KernelInterface;
-use Georgeff\Kernel\Module\ModuleInterface;
+use Georgeff\Kernel\Contract\ModuleInterface;
 
 final class DatabaseModule implements ModuleInterface
 {
     public function register(KernelInterface $kernel): void
     {
-        $kernel->addDefinition(
-            'db.connection',
-            fn() => new PdoConnection(getenv('DB_DSN')),
-            shared: true,
-            aliases: [ConnectionInterface::class],
-        );
+        $kernel->define('db.connection', fn() => new PdoConnection(getenv('DB_DSN')))
+            ->share()
+            ->alias(ConnectionInterface::class);
     }
 }
 ```
 
 #### Configuration
 
-Modules that need to declare configuration implement `ConfigurableModuleInterface`. The returned array is merged into the `kernel.config` container service during boot:
+Modules that need to declare configuration implement `ConfigurableModuleInterface`. The returned array is merged from every configurable module and made available as `Config\ConfigInterface` in the container after boot:
 
 ```php
-use Georgeff\Kernel\Environment;
+use Georgeff\Kernel\Config\ConfigInterface;
+use Georgeff\Kernel\Contract\ConfigurableModuleInterface;
+use Georgeff\Kernel\Contract\EnvironmentInterface;
 use Georgeff\Kernel\KernelInterface;
-use Georgeff\Kernel\Module\ConfigurableModuleInterface;
 
 final class DatabaseModule implements ConfigurableModuleInterface
 {
     public function register(KernelInterface $kernel): void
     {
-        $kernel->addDefinition(
-            'db.connection',
-            fn(ContainerInterface $c) => new PdoConnection($c->get('db.dsn')),
-            shared: true,
-        );
+        $kernel->define('db.connection', fn(ContainerInterface $c) => new PdoConnection(
+            $c->get(ConfigInterface::class)->branch('db')->get('dsn'),
+        ))->share();
     }
 
-    public function config(Environment $env): array
+    public function config(EnvironmentInterface $env): array
     {
         return [
-            'db.dsn'  => getenv('DB_DSN') ?: 'sqlite::memory:',
-            'db.host' => getenv('DB_HOST') ?: 'localhost',
+            'db' => [
+                'dsn'  => getenv('DB_DSN') ?: 'sqlite::memory:',
+                'host' => getenv('DB_HOST') ?: 'localhost',
+            ],
         ];
     }
 }
@@ -274,29 +289,31 @@ final class DatabaseModule implements ConfigurableModuleInterface
 The `$env` parameter is available for structural differences — for example, swapping a real driver for an in-memory one in testing:
 
 ```php
-public function config(Environment $env): array
+public function config(EnvironmentInterface $env): array
 {
     return [
-        'db.dsn' => $env === Environment::Testing
-            ? 'sqlite::memory:'
-            : getenv('DB_DSN'),
+        'db' => [
+            'dsn' => $env->is('testing') ? 'sqlite::memory:' : getenv('DB_DSN'),
+        ],
     ];
 }
 ```
 
-Config from multiple modules is merged in registration order. Later definitions overwrite earlier ones for the same key.
+Config from multiple modules is merged in registration order. Later definitions overwrite earlier ones for the same top-level key.
 
 `Env::get()` is available for reading environment variables with automatic type coercion — useful in `config()` implementations:
 
 ```php
 use Georgeff\Kernel\Support\Env;
 
-public function config(Environment $env): array
+public function config(EnvironmentInterface $env): array
 {
     return [
-        'db.dsn'  => Env::get('DB_DSN', 'sqlite::memory:'),
-        'db.port' => Env::get('DB_PORT', '3306'),
-        'db.log'  => Env::get('DB_LOG', false),
+        'db' => [
+            'dsn'  => Env::get('DB_DSN', 'sqlite::memory:'),
+            'port' => Env::get('DB_PORT', '3306'),
+            'log'  => Env::get('DB_LOG', false),
+        ],
     ];
 }
 ```
@@ -313,13 +330,29 @@ Coercion rules:
 
 Numeric strings are intentionally left as strings — port numbers and similar values are most useful as strings.
 
+#### Reading Config
+
+`Config\ConfigInterface` (resolved from the container) exposes `has()`, `get()`, `isEmpty()`, and `branch()` for fluent traversal into nested array config values:
+
+```php
+use Georgeff\Kernel\Config\ConfigInterface;
+
+$config = $kernel->getContainer()->get(ConfigInterface::class);
+
+$config->has('db');                    // true
+$config->branch('db')->get('port');    // 5432
+$config->branch('missing')->isEmpty(); // true — a missing key produces an empty (not null) branch
+```
+
+`get(string $name, mixed $default = null)` checks `has()` first, so an explicitly-stored `null` value is returned as-is rather than falling back to `$default`. `branch()` throws `ConfigException` if the value at that key exists but isn't an array with non-numeric string keys — a scalar or a list value can't silently be treated as a nested config, so a config-shape mistake fails loud instead of quietly returning nothing further down the chain.
+
 #### Module Boot
 
 Modules that need access to the built container implement `BootableModuleInterface`. `boot()` is called after the container is fully initialized:
 
 ```php
 use Georgeff\Kernel\KernelInterface;
-use Georgeff\Kernel\Module\BootableModuleInterface;
+use Georgeff\Kernel\Contract\BootableModuleInterface;
 use Psr\Container\ContainerInterface;
 
 final class MigrationModule implements BootableModuleInterface
@@ -335,12 +368,14 @@ final class MigrationModule implements BootableModuleInterface
 
 Because the container is already built when `boot()` is called, new service definitions cannot be added here — use `register()` for that.
 
+If a module's `register()` or `boot()` throws anything other than a `KernelExceptionInterface` or a PSR-11 `ContainerExceptionInterface`, it's wrapped in a `ModuleException` with the original preserved as the previous exception, and identifies which module and which phase failed.
+
 #### Registering Modules
 
 Register modules on the kernel before booting:
 
 ```php
-$kernel = new Kernel(Environment::Production);
+$kernel = new Kernel(new Production());
 
 $kernel
     ->addModule(new DatabaseModule())
@@ -350,27 +385,38 @@ $kernel
 $kernel->boot();
 ```
 
-Each module class may only be registered once. Registering the same class twice throws a `KernelException`.
+Each module class may only be registered once. Registering the same class twice throws a `ModuleException`. `addModule()` also throws if called after boot has started.
 
-#### Module Repositories
-
-Repositories group related modules and can conditionally include them based on the environment. Packages ship a repository rather than exposing individual modules:
+`getModules(): list<class-string<ModuleInterface>>` returns the class names of every module added so far — available immediately, before `boot()` is even called:
 
 ```php
-use Georgeff\Kernel\Environment;
-use Georgeff\Kernel\Module\ModuleInterface;
-use Georgeff\Kernel\Module\ModuleRepositoryInterface;
+$kernel->addModule(new DatabaseModule());
 
-final class DatabaseRepository implements ModuleRepositoryInterface
+$kernel->getModules(); // [DatabaseModule::class]
+```
+
+#### Aggregate Modules
+
+A module can compose and cascade-load other modules by implementing `AggregateModuleInterface` — useful for a package that wants a single `addModule()` call to pull in everything it needs, including conditionally based on the environment:
+
+```php
+use Georgeff\Kernel\Contract\AggregateModuleInterface;
+use Georgeff\Kernel\Contract\EnvironmentInterface;
+use Georgeff\Kernel\Contract\ModuleInterface;
+use Georgeff\Kernel\KernelInterface;
+
+final class DatabaseModule implements AggregateModuleInterface
 {
-    public function modules(Environment $env): array
+    public function register(KernelInterface $kernel): void
     {
-        $modules = [
-            new DatabaseModule(),
-            new MigrationModule(),
-        ];
+        // register this module's own services, if any
+    }
 
-        if ($env !== Environment::Production) {
+    public function modules(EnvironmentInterface $env): array
+    {
+        $modules = [new MigrationModule()];
+
+        if (!$env->is('production')) {
             $modules[] = new DatabaseDebugModule();
         }
 
@@ -380,21 +426,26 @@ final class DatabaseRepository implements ModuleRepositoryInterface
 ```
 
 ```php
-$kernel->addRepository(new DatabaseRepository());
+$kernel->addModule(new DatabaseModule());
+// MigrationModule (and DatabaseDebugModule outside production) are loaded automatically.
 ```
+
+Aggregate expansion is recursive — a module returned by `modules()` can itself be an aggregate. The same module-dedup guard used for `addModule()` protects against accidental cycles.
 
 #### Boot Phase Order
 
-When `boot()` is called, modules are processed in this order:
+When `boot()` is called, the kernel proceeds through these phases in order:
 
 1. `onBooting` callbacks
-2. **Module load** — repositories are flattened into the module list; `config()` is called on all `ConfigurableModuleInterface` modules and the result is bound as `kernel.config`
+2. **Module load** — aggregate modules are expanded; `config()` is called on all `ConfigurableModuleInterface` modules and the merged result becomes `Config\ConfigInterface`
 3. **Module registration** — `register()` is called on all modules
-4. **Service overrides** — pending overrides are applied after all modules have registered
-5. **Service decoration** — pending decorators are applied after overrides
-6. Container initialization
-7. **Module boot** — `boot()` is called on all `BootableModuleInterface` modules
-8. `KernelBooted` event dispatched + `onBooted` callbacks
+4. **Service fallbacks** — pending `defineFallback()` definitions are added for any id that's still undefined
+5. **Service overrides** — pending overrides are applied
+6. **Service decoration** — pending decorators are applied
+7. Container initialization
+8. **Module boot** — `boot()` is called on all `BootableModuleInterface` modules
+9. `onBooted` callbacks
+10. **Garbage collection** — boot-only working state is released
 
 ### Lifecycle Callbacks
 
@@ -406,11 +457,11 @@ The kernel provides four hooks for tapping into the boot and shutdown lifecycle.
 
 ```php
 $kernel->onBooting(function (KernelInterface $kernel) {
-    $kernel->addDefinition('dynamic', fn() => new SomeService(), shared: true);
+    $kernel->define('dynamic', fn() => new SomeService())->share();
 });
 ```
 
-`onBooted` runs after boot completes and the `KernelBooted` event has been dispatched. The container is available at this point:
+`onBooted` runs after boot completes. The container is available at this point:
 
 ```php
 $kernel->onBooted(function (KernelInterface $kernel) {
@@ -434,6 +485,22 @@ $kernel->afterShutdown(function (KernelInterface $kernel) {
 });
 ```
 
+#### Resolution hooks
+
+`onResolving` and `onResolved` tap into the container's own resolution lifecycle — a pre-resolution hook fired on every `get()` call (including cache hits) and a post-resolution hook fired only when a factory actually runs:
+
+```php
+$kernel->onResolving(function (string $id) {
+    // about to resolve $id
+});
+
+$kernel->onResolved(function (string $id, mixed $resolved) {
+    // $id was just resolved to $resolved via its factory
+});
+```
+
+Both must be registered before `boot()` is called, and both throw `KernelException` if called after boot.
+
 ### Shutdown
 
 Call `shutdown()` to run the shutdown lifecycle. It is idempotent and a no-op if the kernel has not been booted:
@@ -454,64 +521,89 @@ Shutdown runs in this order:
 2. Kernel marked as shut down (`isShutdown()` becomes `true`)
 3. `afterShutdown` callbacks
 
-### Events
+### Resetting Services
 
-After boot completes, the kernel dispatches a `KernelBooted` event via PSR-14 if an `EventDispatcherInterface` is registered in the container:
+For long-running processes (workers, daemons) that want a clean slate between units of work, `resetServices()` resets every resolved shared service that implements `Contract\ResettableInterface` back to its original state:
 
 ```php
-use Georgeff\Kernel\Event\KernelBooted;
-use Psr\EventDispatcher\EventDispatcherInterface;
+use Georgeff\Kernel\Contract\ResettableInterface;
 
-$kernel->addDefinition(
-    EventDispatcherInterface::class,
-    fn() => new MyEventDispatcher(),
-    shared: true,
-);
+final class ConnectionPool implements ResettableInterface
+{
+    public function reset(): void
+    {
+        // clear internal state
+    }
+}
 
-$kernel->boot(); // dispatches KernelBooted
+$kernel->define(ConnectionPool::class, fn() => new ConnectionPool())->share();
+$kernel->boot();
 
-// In your listener:
-function handleBooted(KernelBooted $event): void {
-    $kernel = $event->kernel; // readonly public property
+$kernel->getContainer()->get(ConnectionPool::class);
+
+$kernel->resetServices();
+// ConnectionPool::reset() was called automatically — no manual tagging required.
+```
+
+Detection is automatic: any resolved, shared service implementing `ResettableInterface` is tracked the moment it's resolved through the container. `resetServices()` throws `KernelException` if called before boot.
+
+A service's `reset()` is allowed to fail up to a threshold before `resetServices()` gives up on it entirely and throws `ServiceResetException`. The default threshold is 3, passed as an argument:
+
+```php
+$kernel->resetServices(failureThreshold: 5);
+```
+
+An individual service can override the default by implementing `ThresholdAwareResettableInterface`:
+
+```php
+use Georgeff\Kernel\Contract\ThresholdAwareResettableInterface;
+
+final class FlakyCache implements ThresholdAwareResettableInterface
+{
+    public function reset(): void { /* ... */ }
+
+    public function getFailureThreshold(): int
+    {
+        return 1; // give up after the very first failure
+    }
 }
 ```
 
-If no `EventDispatcherInterface` is registered, boot completes without dispatching.
+Failures are tracked per container id (not per class, so the same class backing two different ids is tracked independently) and accumulate across separate calls to `resetServices()` until a successful reset clears that service's failure history.
 
-### Custom Service Registrar
+### Custom Container Builder
 
-The kernel uses a `ServiceRegistrar` interface to register definitions with the container. `DefaultServiceRegistrar`, backed by `georgeff/container`, is used by default. Provide your own to use a different container implementation:
+The kernel uses a `Contract\ContainerBuilderInterface` to register definitions with the underlying container. `DI\ContainerBuilder`, backed by `georgeff/container`, is used by default. Provide your own to use a different container implementation:
 
 ```php
-$registrar = new MyServiceRegistrar();
-$kernel = new Kernel(Environment::Production, $registrar);
+$builder = new MyContainerBuilder();
+$kernel = new Kernel(new Production(), $builder);
 ```
-
-If the registrar also implements `ResolvingAwareServiceRegistrar`, the kernel registers a post-resolution hook in debug mode to track which services have been resolved and collect debug info from `DebuggableInterface` implementations. Custom registrars that do not implement it will function normally — debug resolution tracking simply will not be available.
 
 ### Debug Mode
 
-When debug mode is enabled, the kernel profiles the boot process and tracks service resolutions. If the registrar implements `ResolvingAwareServiceRegistrar`, the kernel also collects debug info from any resolved service that implements `DebuggableInterface`:
+When debug mode is enabled, the kernel profiles the boot process and tracks service resolutions:
 
 ```php
-$kernel = new Kernel(Environment::Development, debug: true);
+$kernel = new Kernel(new Development(), debug: true);
 $kernel->boot();
 
 $kernel->getStartTime(); // float (microtime)
-$kernel->getDebugInfo(); // boot profile + service resolution data
+$kernel->getDebugInfo(); // boot profile + service resolution + resetter data
 ```
 
 The `getDebugInfo()` array contains:
 
-- `bootProfile` — timing for each boot phase (`preBoot`, `moduleLoad`, `moduleRegistration`, `serviceDecoration`, `serviceRegistration`, `containerInit`, `moduleBoot`)
-- `modules` — module loader state: which module classes were loaded and whether each phase has run
-- `services` — present only when the registrar implements `ResolvingAwareServiceRegistrar`; tracks which services have been resolved and which remain unresolved; each resolved entry includes a `resolutionCount` and, for services implementing `DebuggableInterface`, a `debugInfo` key containing the output of their `getDebugInfo()` method
+- `bootProfile` — timing for each boot phase
+- `modules` — module loader state: which module classes were added and whether each phase has run
+- `services` — which services have been resolved and which remain unresolved; each resolved entry includes a `resolutionCount` and, for services implementing `DebuggableInterface`, a `debugInfo` key
+- `service.resetter` — failure counts and logged exception messages per service id, for services that have failed a `reset()` at least once
 
 When debug is disabled, `getStartTime()` returns `-INF` and `getDebugInfo()` returns `[]`.
 
 #### DebuggableInterface
 
-Services can implement `DebuggableInterface` to expose debug data. When the registrar implements `ResolvingAwareServiceRegistrar` and debug mode is enabled, their `getDebugInfo()` output is collected automatically after each factory resolution and included in the kernel's debug info under `services.resolved`:
+Services can implement `DebuggableInterface` to expose debug data. In debug mode, their `getDebugInfo()` output is collected automatically after each factory resolution and included in the kernel's debug info under `services.resolved`:
 
 ```php
 use Georgeff\Kernel\Debug\DebuggableInterface;
@@ -525,12 +617,25 @@ final class ConnectionPool implements DebuggableInterface
 }
 ```
 
-### KernelException Helpers
+### Exceptions
 
-`KernelException` provides three static helpers for throwing from guard conditions without an inline `if`:
+Every exception this package throws implements `Exception\KernelExceptionInterface`, so callers can catch one type regardless of which specific exception was thrown:
 
 ```php
-use Georgeff\Kernel\KernelException;
+use Georgeff\Kernel\Exception\KernelExceptionInterface;
+
+try {
+    $kernel->boot();
+} catch (KernelExceptionInterface $e) {
+    // KernelException, ModuleException, ConfigException, DefinitionException,
+    // EnvironmentException, or ServiceResetException
+}
+```
+
+`KernelException` (general kernel-state guards), `ModuleException` (module lifecycle), `ConfigException` (`Config::branch()`), `DefinitionException` (`DefinitionRepository` guards), `EnvironmentException` (`EnvironmentResolver`), and `ServiceResetException` (`resetServices()`) each provide static helpers via the shared `Exception\ThrowHelpers` trait:
+
+```php
+use Georgeff\Kernel\Exception\KernelException;
 
 // Always throws
 KernelException::throw('Something went wrong');
@@ -542,26 +647,14 @@ KernelException::throwIf($this->isBooted(), 'Kernel is already booted');
 KernelException::throwIfNot($this->isBooted(), 'Kernel has not been booted');
 ```
 
-These are primarily useful when authoring custom kernel subclasses or modules that need guard conditions consistent with the kernel's own error type.
-
-### Reserved Services
-
-The kernel registers the following services in the container during boot:
-
-- `kernel` (aliased to `KernelInterface`)
-- `kernel.environment` — the environment string value (e.g. `'production'`)
-- `kernel.debug` — the debug flag (`bool`)
-- `kernel.config` — the merged config array from all `ConfigurableModuleInterface` modules (`[]` if none)
-- `kernel.tag.registry` (aliased to `TagRegistryInterface`) — the tag registry
-
-These IDs cannot be overwritten via `addDefinition`, `decorate`, or `override`. The `kernel.*` namespace is reserved for the kernel — any service ID with that prefix should be considered owned by the package and subject to change between minor versions.
+Each accepts an optional second (or third, for `throwIf`/`throwIfNot`) `$previous` throwable. These are primarily useful when authoring custom kernel subclasses or modules that need guard conditions consistent with the kernel's own error types.
 
 ### Extending the Kernel
 
-The `Kernel` class can be extended for specialized use cases such as HTTP or console kernels. A `RunnableKernelInterface` is provided for kernels that serve as an application entry point:
+The `Kernel` class can be extended for specialized use cases such as HTTP or console kernels. `Contract\RunnableKernelInterface extends KernelInterface` is provided for kernels that serve as an application entry point:
 
 ```php
-use Georgeff\Kernel\RunnableKernelInterface;
+use Georgeff\Kernel\Contract\RunnableKernelInterface;
 
 class ConsoleKernel extends Kernel implements RunnableKernelInterface
 {
