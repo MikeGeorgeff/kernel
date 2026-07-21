@@ -618,6 +618,111 @@ class KernelTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
+    // enableGc()
+    // -------------------------------------------------------------------------
+
+    public function test_enable_gc_returns_the_kernel(): void
+    {
+        $kernel = new Kernel(new Testing());
+
+        $result = $kernel->enableGc();
+
+        $this->assertSame($kernel, $result);
+    }
+
+    public function test_enable_gc_throws_after_boot(): void
+    {
+        $kernel = new Kernel(new Testing());
+        $kernel->boot();
+
+        $this->expectException(KernelException::class);
+        $this->expectExceptionMessage('Kernel has already been booted, cannot enable garbage collection');
+
+        $kernel->enableGc();
+    }
+
+    public function test_enable_gc_throws_after_boot_even_if_already_enabled_before_boot(): void
+    {
+        $kernel = new Kernel(new Testing());
+        $kernel->enableGc();
+        $kernel->boot();
+
+        $this->expectException(KernelException::class);
+        $this->expectExceptionMessage('Kernel has already been booted, cannot enable garbage collection');
+
+        $kernel->enableGc();
+    }
+
+    public function test_enable_gc_does_not_interfere_with_normal_service_resolution(): void
+    {
+        $service = new \stdClass();
+
+        $kernel = new Kernel(new Testing());
+        $kernel->enableGc();
+        $kernel->define('my.service', fn() => $service)->share();
+        $kernel->boot();
+
+        $this->assertSame($service, $kernel->getContainer()->get('my.service'));
+    }
+
+    public function test_enable_gc_does_not_interfere_with_module_registration_or_boot(): void
+    {
+        $registered = false;
+        $booted     = false;
+
+        $module = new class ($registered, $booted) implements BootableModuleInterface {
+            public function __construct(private bool &$registered, private bool &$booted) {}
+            public function register(KernelInterface $kernel): void
+            {
+                $this->registered = true;
+            }
+            public function boot(ContainerInterface $container): void
+            {
+                $this->booted = true;
+            }
+        };
+
+        $kernel = new Kernel(new Testing());
+        $kernel->enableGc();
+        $kernel->addModule($module);
+        $kernel->boot();
+
+        $this->assertTrue($registered);
+        $this->assertTrue($booted);
+    }
+
+    public function test_enable_gc_can_be_called_from_within_a_module_register_method(): void
+    {
+        // A module can opt the whole kernel into gc on its own authority,
+        // without the top-level bootstrap needing to know or coordinate.
+        $module = new class implements ModuleInterface {
+            public function register(KernelInterface $kernel): void
+            {
+                $kernel->enableGc();
+            }
+        };
+
+        $kernel = new Kernel(new Testing());
+        $kernel->addModule($module);
+        $kernel->boot();
+
+        $this->assertTrue($kernel->isBooted());
+    }
+
+    public function test_enable_gc_can_be_called_multiple_times_without_error(): void
+    {
+        // No guard against multiple callers (e.g. two modules both opting in) -
+        // each just queues an equally-redundant, harmless onBooted callback.
+        $kernel = new Kernel(new Testing());
+        $kernel->enableGc();
+        $kernel->enableGc();
+
+        $kernel->boot();
+
+        $this->assertTrue($kernel->isBooted());
+    }
+
+    // -------------------------------------------------------------------------
     // $profiler visibility (asymmetric property scoping)
     // -------------------------------------------------------------------------
 

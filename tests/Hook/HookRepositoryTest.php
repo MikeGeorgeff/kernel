@@ -470,4 +470,22 @@ class HookRepositoryTest extends TestCase
 
         $this->assertSame([$callback], $repository->getAfterShutdownCallbacks());
     }
+
+    public function test_gc_called_from_within_an_on_booted_callback_does_not_skip_later_on_booted_callbacks(): void
+    {
+        $repository = new HookRepository();
+        $kernel     = $this->createStub(KernelInterface::class);
+        $secondRan  = false;
+
+        $repository->onBooted(function () use ($repository) {
+            $repository->gc();
+        });
+        $repository->onBooted(function () use (&$secondRan) {
+            $secondRan = true;
+        });
+
+        $repository->invokeOnBootedCallbacks($kernel);
+
+        $this->assertTrue($secondRan);
+    }
 }

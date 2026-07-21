@@ -35,6 +35,8 @@ class Kernel implements KernelInterface
 
     private bool $shutdown = false;
 
+    private bool $gcEnabled = false;
+
     /**
      * @var array<string, mixed>
      */
@@ -163,6 +165,8 @@ class Kernel implements KernelInterface
             /** @var array<string, bool> */
             $shared = $this->storage['services.shared'];
 
+            unset($this->storage['services.shared']);
+
             $this->builder->onResolved(function (string $id, mixed $resolved) use ($shared) {
                 if ($resolved instanceof Contract\ResettableInterface && isset($shared[$id])) {
                     $this->resetter->add($id, $resolved);
@@ -184,14 +188,6 @@ class Kernel implements KernelInterface
 
         $this->profile($profile, 'postBoot', function () {
             $this->hooks->invokeOnBootedCallbacks($this);
-        });
-
-        $this->profile($profile, 'garbageCollection', function () {
-            $this->definitions->gc();
-            $this->modules->gc();
-            $this->hooks->gc();
-
-            unset($this->storage['services.shared']);
         });
 
         $profile?->stop();
@@ -328,6 +324,25 @@ class Kernel implements KernelInterface
         KernelException::throwIf($this->isBooted(), 'Kernel has already been booted, cannot add new post-resolution callbacks');
 
         $this->builder->onResolved($callback);
+
+        return $this;
+    }
+
+    public function enableGc(): static
+    {
+        KernelException::throwIf($this->isBooted(), 'Kernel has already been booted, cannot enable garbage collection');
+
+        if ($this->gcEnabled) {
+            return $this;
+        }
+
+        $this->gcEnabled = true;
+
+        $this->hooks->onBooted(function () {
+            $this->modules->gc();
+            $this->definitions->gc();
+            $this->hooks->gc();
+        });
 
         return $this;
     }

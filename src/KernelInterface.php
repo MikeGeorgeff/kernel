@@ -129,6 +129,15 @@ interface KernelInterface extends DebuggableInterface
     public function onResolved(callable $callback): static;
 
     /**
+     * Enable garbage collection on internal classes after boot
+     *
+     * @return static
+     *
+     * @throws KernelExceptionInterface
+     */
+    public function enableGc(): static;
+
+    /**
      * Add a container definition using the fluent builder
      *
      * @param string                              $id
@@ -211,6 +220,8 @@ interface KernelInterface extends DebuggableInterface
      * @throws KernelExceptionInterface
      */
     public function getContainer(): ContainerInterface;
+
+
 
     /**
      * Get the kernel start time (only available in debug mode)

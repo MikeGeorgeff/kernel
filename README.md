@@ -444,8 +444,7 @@ When `boot()` is called, the kernel proceeds through these phases in order:
 6. **Service decoration** — pending decorators are applied
 7. Container initialization
 8. **Module boot** — `boot()` is called on all `BootableModuleInterface` modules
-9. `onBooted` callbacks
-10. **Garbage collection** — boot-only working state is released
+9. `onBooted` callbacks — if `enableGc()` was called, its cleanup runs here too, as just another `onBooted` callback (see [Garbage Collection](#garbage-collection))
 
 ### Lifecycle Callbacks
 
@@ -529,6 +528,30 @@ Shutdown runs in this order:
 If an `onShutdown` callback throws, none of the following steps run — the container isn't released, `isShutdown()` stays `false`, and `afterShutdown` callbacks don't run. Shutdown either completes in full or is treated as not having happened at all, so a caller that catches the failure still has a working kernel rather than a half-torn-down one.
 
 After shutdown, `getContainer()` and `resetServices()` both throw `KernelException` — there's nothing left to resolve or reset.
+
+### Garbage Collection
+
+`enableGc()` opts the kernel into releasing boot-only working state — `DefinitionRepository`'s, `ModuleLoader`'s, and `HookRepository`'s (`onBooting`/`onBooted` callbacks) — once `boot()` completes. Not every environment needs this, so it isn't automatic; a short-lived script has nothing to gain from it, while a long-running worker or daemon that keeps a `Kernel` instance alive indefinitely does:
+
+```php
+$kernel = new Kernel(new Production());
+$kernel->enableGc();
+$kernel->boot();
+```
+
+`enableGc()` just registers the cleanup as a normal `onBooted()` callback internally, so it inherits that method's guard — it must be called before `boot()`, from anywhere with a reference to the kernel. That includes from inside a module's own `register()`, so a module can opt the whole kernel into cleanup on its own authority without the top-level bootstrap needing to know or coordinate:
+
+```php
+final class SomeModule implements ModuleInterface
+{
+    public function register(KernelInterface $kernel): void
+    {
+        $kernel->enableGc();
+    }
+}
+```
+
+Calling `enableGc()` more than once (e.g. two modules both opting in) is safe — an internal flag makes it idempotent, so only one cleanup callback ever gets registered regardless of how many callers opt in. It still throws every time it's called after `boot()`, even if it was already successfully enabled beforehand. `onShutdown`/`afterShutdown` callbacks are always left uncleared regardless, since they haven't run yet at that point.
 
 ### Resetting Services
 
