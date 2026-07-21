@@ -2,10 +2,10 @@
 
 namespace Georgeff\Kernel\Test\Debug;
 
-use Georgeff\Kernel\Debug\DebuggableInterface;
+use PHPUnit\Framework\TestCase;
 use Georgeff\Kernel\Debug\ResolvedService;
 use Georgeff\Kernel\Debug\ServiceResolution;
-use PHPUnit\Framework\TestCase;
+use Georgeff\Kernel\Contract\DebuggableInterface;
 
 class ServiceResolutionTest extends TestCase
 {

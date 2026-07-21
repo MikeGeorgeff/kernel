@@ -2,6 +2,8 @@
 
 namespace Georgeff\Kernel\Debug;
 
+use Georgeff\Kernel\Contract\DebuggableInterface;
+
 /**
  * @internal
  */

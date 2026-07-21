@@ -789,7 +789,7 @@ class KernelTest extends TestCase
 
     public function test_get_debug_info_includes_debug_info_from_debuggable_resolved_service(): void
     {
-        $service = new class implements \Georgeff\Kernel\Debug\DebuggableInterface {
+        $service = new class implements \Georgeff\Kernel\Contract\DebuggableInterface {
             public function getDebugInfo(): array
             {
                 return ['custom' => 'data'];
@@ -812,7 +812,7 @@ class KernelTest extends TestCase
     {
         $kernel = new Kernel(new Testing());
 
-        $this->assertInstanceOf(\Georgeff\Kernel\Debug\DebuggableInterface::class, $kernel);
+        $this->assertInstanceOf(\Georgeff\Kernel\Contract\DebuggableInterface::class, $kernel);
     }
 
     // -------------------------------------------------------------------------

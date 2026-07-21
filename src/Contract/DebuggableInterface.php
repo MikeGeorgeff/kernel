@@ -1,6 +1,6 @@
 <?php
 
-namespace Georgeff\Kernel\Debug;
+namespace Georgeff\Kernel\Contract;
 
 interface DebuggableInterface
 {

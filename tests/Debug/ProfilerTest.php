@@ -2,9 +2,9 @@
 
 namespace Georgeff\Kernel\Test\Debug;
 
-use Georgeff\Kernel\Debug\DebuggableInterface;
-use Georgeff\Kernel\Debug\Profiler;
 use PHPUnit\Framework\TestCase;
+use Georgeff\Kernel\Debug\Profiler;
+use Georgeff\Kernel\Contract\DebuggableInterface;
 
 class ProfilerTest extends TestCase
 {

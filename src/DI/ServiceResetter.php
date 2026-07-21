@@ -3,7 +3,7 @@
 namespace Georgeff\Kernel\DI;
 
 use Throwable;
-use Georgeff\Kernel\Debug\DebuggableInterface;
+use Georgeff\Kernel\Contract\DebuggableInterface;
 use Georgeff\Kernel\Contract\ResettableInterface;
 use Georgeff\Kernel\Exception\ServiceResetException;
 use Georgeff\Kernel\Contract\ThresholdAwareResettableInterface;
