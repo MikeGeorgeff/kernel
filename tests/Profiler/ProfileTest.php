@@ -187,6 +187,8 @@ class ProfileTest extends TestCase
         $this->assertArrayHasKey('memory.usage', $info);
         $this->assertArrayHasKey('phases', $info);
         $this->assertArrayHasKey('testPhase', $info['phases']);
+        $this->assertArrayHasKey('start.time', $info['phases']['testPhase']);
+        $this->assertArrayHasKey('end.time', $info['phases']['testPhase']);
         $this->assertArrayHasKey('duration', $info['phases']['testPhase']);
         $this->assertArrayHasKey('memory.usage', $info['phases']['testPhase']);
         $this->assertIsFloat($info['duration']);

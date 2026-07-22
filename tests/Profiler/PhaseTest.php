@@ -176,14 +176,18 @@ class PhaseTest extends TestCase
 
     public function test_get_debug_info_returns_expected_structure(): void
     {
-        $phase = new Phase('test');
-        $phase->start();
-        $phase->stop();
+        $phase     = new Phase('test');
+        $startedAt = $phase->start();
+        $stoppedAt = $phase->stop();
 
         $info = $phase->getDebugInfo();
 
+        $this->assertArrayHasKey('start.time', $info);
+        $this->assertArrayHasKey('end.time', $info);
         $this->assertArrayHasKey('duration', $info);
         $this->assertArrayHasKey('memory.usage', $info);
+        $this->assertSame($startedAt, $info['start.time']);
+        $this->assertSame($stoppedAt, $info['end.time']);
         $this->assertIsFloat($info['duration']);
         $this->assertIsInt($info['memory.usage']);
     }
@@ -194,6 +198,8 @@ class PhaseTest extends TestCase
 
         $info = $phase->getDebugInfo();
 
+        $this->assertNull($info['start.time']);
+        $this->assertNull($info['end.time']);
         $this->assertNull($info['duration']);
         $this->assertNull($info['memory.usage']);
     }

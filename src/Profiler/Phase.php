@@ -80,6 +80,8 @@ final class Phase implements DebuggableInterface
     public function getDebugInfo(): array
     {
         return [
+            'start.time'   => $this->getStartTime(),
+            'end.time'     => $this->getEndTime(),
             'duration'     => $this->getDuration(),
             'memory.usage' => $this->getMemoryUsage(),
         ];
