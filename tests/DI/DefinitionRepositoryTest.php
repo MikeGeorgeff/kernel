@@ -149,36 +149,35 @@ class DefinitionRepositoryTest extends TestCase
         $this->assertArrayHasKey('bar', $all);
     }
 
-    public function test_get_raw_returns_empty_array_when_no_definitions(): void
+    public function test_get_instropection_data_returns_empty_array_when_no_definitions(): void
     {
         $repository = new DefinitionRepository();
 
-        $this->assertSame([], $repository->getRaw());
+        $this->assertSame([], $repository->getInstropectionData());
     }
 
-    public function test_get_raw_returns_raw_definition_data(): void
+    public function test_get_instropection_data_returns_introspection_data(): void
     {
         $repository = new DefinitionRepository();
-        $factory    = fn() => 'bar';
 
-        $repository->add('foo', $factory)->share()->alias('baz');
+        $repository->add('foo', fn() => 'bar')->share()->alias('baz')->tag('sampled');
 
-        $raw = $repository->getRaw();
+        $data = $repository->getInstropectionData();
 
-        $this->assertArrayHasKey('foo', $raw);
-        $this->assertSame($factory, $raw['foo']['factory']);
-        $this->assertTrue($raw['foo']['shared']);
-        $this->assertSame(['baz'], $raw['foo']['aliases']);
+        $this->assertArrayHasKey('foo', $data);
+        $this->assertTrue($data['foo']['shared']);
+        $this->assertSame(['baz'], $data['foo']['aliases']);
+        $this->assertSame(['sampled'], $data['foo']['tags']);
     }
 
-    public function test_get_raw_reflects_definition_state_at_call_time(): void
+    public function test_get_instropection_data_reflects_definition_state_at_call_time(): void
     {
         $repository = new DefinitionRepository();
         $definition = $repository->add('foo', fn() => 'bar');
 
         $definition->share()->alias('baz');
 
-        $raw = $repository->getRaw();
+        $raw = $repository->getInstropectionData();
 
         $this->assertTrue($raw['foo']['shared']);
         $this->assertSame(['baz'], $raw['foo']['aliases']);

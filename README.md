@@ -630,7 +630,7 @@ The `getDebugInfo()` array contains:
 - `profiles.boot` — timing and memory usage for each boot phase
 - `profiles.shutdown` — timing for the `shuttingDown` and `afterShutdown` phases; only present once `shutdown()` has actually been called
 - `components.modules` — module loader state: which module classes were added and whether each phase has run; present as soon as debug mode is enabled, even before `boot()` is called
-- `components.service.resolution` — which services have been resolved and which remain unresolved; each resolved entry includes a `resolutionCount` and, for services implementing `DebuggableInterface`, a `debugInfo` key; only present once `boot()` has run
+- `components.service.resolution` — which services have been resolved and which remain unresolved; only present once `boot()` has run. Each resolved entry reports `count` (number of times resolved), `duration` and `memory` (summed across every resolution), a `resolutions` list with the timing/memory breakdown of each individual resolution, and, for services implementing `DebuggableInterface`, a `debug.info` key holding the most recently resolved instance's own debug data. A shared service resolved more than once (repeat `get()` calls hitting the container's cache) is only counted once; a non-shared service resolved multiple times accumulates one entry in `resolutions` per resolution
 - `components.service.resetter` — failure counts and logged exception messages per service id, for services that have failed a `reset()` at least once; present as soon as debug mode is enabled, even before `boot()` is called
 
 Debuggable services registered against the profiler are nested under `components` specifically to keep that namespace separate from `profiles` — a registered name could otherwise collide with a profile name (e.g. a service registered as `boot`).
@@ -639,7 +639,7 @@ When debug is disabled, `getStartTime()` returns `null` and `getDebugInfo()` ret
 
 #### DebuggableInterface
 
-Services can implement `DebuggableInterface` to expose debug data. In debug mode, their `getDebugInfo()` output is collected automatically after each factory resolution and included in the kernel's debug info under `components.service.resolution.resolved`:
+Services can implement `DebuggableInterface` to expose debug data. In debug mode, their `getDebugInfo()` output is collected automatically after each factory resolution and included in the kernel's debug info under `components.service.resolution.resolved.<id>.debug.info`:
 
 ```php
 use Georgeff\Kernel\Contract\DebuggableInterface;

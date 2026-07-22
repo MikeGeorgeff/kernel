@@ -965,6 +965,21 @@ class KernelTest extends TestCase
         $this->assertArrayHasKey('foo', $info['components']['service.resolution']['resolved']);
     }
 
+    public function test_get_debug_info_removes_a_resolved_service_from_unresolved(): void
+    {
+        $kernel = new Kernel(new Testing(), debug: true);
+        $kernel->define('foo', fn() => 'bar')->share();
+        $kernel->define('baz', fn() => 'qux')->share();
+        $kernel->boot();
+
+        $kernel->getContainer()->get('foo');
+
+        $info = $kernel->getDebugInfo();
+
+        $this->assertNotContains('foo', $info['components']['service.resolution']['unresolved']);
+        $this->assertContains('baz', $info['components']['service.resolution']['unresolved']);
+    }
+
     public function test_get_debug_info_includes_debug_info_from_debuggable_resolved_service(): void
     {
         $service = new class implements \Georgeff\Kernel\Contract\DebuggableInterface {
@@ -982,8 +997,8 @@ class KernelTest extends TestCase
 
         $info = $kernel->getDebugInfo();
 
-        $this->assertArrayHasKey('debugInfo', $info['components']['service.resolution']['resolved']['foo']);
-        $this->assertSame(['custom' => 'data'], $info['components']['service.resolution']['resolved']['foo']['debugInfo']);
+        $this->assertArrayHasKey('debug.info', $info['components']['service.resolution']['resolved']['foo']);
+        $this->assertSame(['custom' => 'data'], $info['components']['service.resolution']['resolved']['foo']['debug.info']);
     }
 
     public function test_kernel_implements_debuggable_interface(): void

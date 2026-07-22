@@ -177,20 +177,20 @@ final class DefinitionRepository
     }
 
     /**
-     * @return array<string, array{factory: callable, shared: bool, aliases: string[]}>
+     * @return array<string, array{shared: bool, aliases: string[], tags: string[]}>
      */
-    public function getRaw(): array
+    public function getInstropectionData(): array
     {
-        $raw = [];
+        $output = [];
 
-        foreach ($this->all() as $definition) {
-            $raw[$definition->getId()] = [
-                'factory' => $definition->getFactory(),
+        foreach ($this->definitions as $definition) {
+            $output[$definition->getId()] = [
                 'shared'  => $definition->isShared(),
                 'aliases' => $definition->getAliases(),
+                'tags'    => $definition->getTags(),
             ];
         }
 
-        return $raw;
+        return $output;
     }
 }

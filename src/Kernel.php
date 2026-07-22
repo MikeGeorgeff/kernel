@@ -8,6 +8,7 @@ use Georgeff\Kernel\Contract\ModuleInterface;
 use Georgeff\Kernel\Exception\KernelException;
 use Georgeff\Kernel\Contract\EnvironmentInterface;
 use Georgeff\Kernel\Contract\ContainerBuilderInterface;
+use Georgeff\Kernel\DI\Profile\ServiceResolutionProfile;
 
 class Kernel implements KernelInterface
 {
@@ -139,15 +140,18 @@ class Kernel implements KernelInterface
 
         $this->profile($profile, 'containerInit', function () use ($shared) {
             if ($this->isDebug()) {
-                $services = new Debug\ServiceResolution($this->definitions->getRaw());
+                assert(null !== $this->profiler);
 
-                $this->builder->onResolved(
-                    function (string $id, mixed $resolved) use ($services) {
-                        $services->resolve($id, $resolved);
-                    }
+                $this->profiler->register(
+                    $services = new ServiceResolutionProfile($this->definitions->getInstropectionData()),
+                    'service.resolution'
                 );
 
-                $this->profiler?->register($services, 'service.resolution');
+                $this->builder->onResolving(fn(string $id) => $services->resolving($id));
+
+                $this->builder->onResolved(
+                    fn(string $id, mixed $instance) => $services->resolved($id, $instance)
+                );
             }
 
             $this->builder->onResolved(function (string $id, mixed $resolved) use ($shared) {
