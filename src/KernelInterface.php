@@ -221,13 +221,11 @@ interface KernelInterface extends DebuggableInterface
      */
     public function getContainer(): ContainerInterface;
 
-
-
     /**
      * Get the kernel start time (only available in debug mode)
      *
-     * @return float
+     * @return null|float
      */
-    public function getStartTime(): float;
+    public function getStartTime(): ?float;
 
 }

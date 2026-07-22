@@ -9,103 +9,94 @@ use Georgeff\Kernel\Contract\DebuggableInterface;
  */
 final class Profile implements DebuggableInterface
 {
-    /**
-     * Global timer
-     */
-    private ?float $start = null;
-    private ?float $end = null;
+    private readonly Phase $timer;
 
     /**
      * Phase timer
      *
-     * @var array<string, array{'start.time'?: float, 'end.time'?: float}>
+     * @var array<string, Phase>
      */
     private array $phases = [];
 
-    /**
-     * Start the global timer
-     */
+    public function __construct(private readonly string $name)
+    {
+        $this->timer = new Phase('__profile__');
+    }
+
+    public function getName(): string
+    {
+        return $this->name;
+    }
+
+    public function isIncomplete(): bool
+    {
+        return $this->timer->isIncomplete();
+    }
+
     public function start(): float
     {
-        return $this->start = microtime(true);
+        return $this->timer->start();
     }
 
-    /**
-     * Stop the global timer
-     */
     public function stop(): float
     {
-        return $this->end = microtime(true);
+        return $this->timer->stop();
     }
 
-    /**
-     * Start profiling a phase
-     */
+    public function getStartTime(): ?float
+    {
+        return $this->timer->getStartTime();
+    }
+
+    public function getEndTime(): ?float
+    {
+        return $this->timer->getEndTime();
+    }
+
+    public function hasPhase(string $phase): bool
+    {
+        return isset($this->phases[$phase]);
+    }
+
     public function startPhase(string $phase): float
     {
-        return $this->phases[$phase]['start.time'] = microtime(true);
+        $this->phases[$phase] = new Phase($phase);
+
+        return $this->phases[$phase]->start();
     }
 
-    /**
-     * Stop profiling a phase
-     */
     public function stopPhase(string $phase): float
     {
-        return $this->phases[$phase]['end.time'] = microtime(true);
-    }
-
-    public function getStartTime(): float
-    {
-        return $this->start ?? -INF;
-    }
-
-    /**
-     * Get phase time
-     */
-    public function getPhaseDuration(string $phase): float
-    {
-        if (!isset($this->phases[$phase])
-            || !isset($this->phases[$phase]['start.time'], $this->phases[$phase]['end.time'])
-        ) {
-            return -INF;
+        if (!$this->hasPhase($phase)) {
+            $this->phases[$phase] = new Phase($phase);
         }
 
-        return $this->phases[$phase]['end.time'] - $this->phases[$phase]['start.time'];
+        return $this->phases[$phase]->stop();
     }
 
-    /**
-     * Get the overall duration clocked by the global timer
-     */
-    public function getOverallDuration(): float
+    public function getPhaseDuration(string $phase): ?float
     {
-        if (null === $this->start || null === $this->end) {
-            return -INF;
-        }
-
-        return $this->end - $this->start;
+        return $this->hasPhase($phase)
+            ? $this->phases[$phase]->getDuration()
+            : null;
     }
 
-    /**
-     * @inheritdoc
-     *
-     * @return array<string, mixed>
-     */
+    public function getOverallDuration(): ?float
+    {
+        return $this->timer->getDuration();
+    }
+
     public function getDebugInfo(): array
     {
-        $duration = $this->getOverallDuration();
-
         $info = [
-            'start.time' => $this->start,
-            'end.time'   => $this->end,
-            'duration'   => !is_infinite($duration) ? $duration : null,
+            'start.time'   => $this->getStartTime(),
+            'end.time'     => $this->getEndTime(),
+            'duration'     => $this->getOverallDuration(),
+            'memory.usage' => $this->timer->getMemoryUsage(),
         ];
 
-        foreach ($this->phases as $phase => $timer) {
-            $phaseDuration = $this->getPhaseDuration($phase);
-
-            $timer['duration'] = !is_infinite($phaseDuration) ? $phaseDuration : null;
-
-            $info['phases'][$phase] = $timer;
+        foreach ($this->phases as $phase) {
+            $info['phases'][$phase->getName()] = $phase->getDebugInfo();
         }
 
         return $info;

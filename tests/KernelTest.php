@@ -752,12 +752,12 @@ class KernelTest extends TestCase
         $kernel->overwriteProfiler();
     }
 
-    public function test_get_start_time_returns_negative_infinity_when_not_debug(): void
+    public function test_get_start_time_returns_null_when_not_debug(): void
     {
         $kernel = new Kernel(new Testing());
         $kernel->boot();
 
-        $this->assertSame(-INF, $kernel->getStartTime());
+        $this->assertNull($kernel->getStartTime());
     }
 
     public function test_get_start_time_returns_float_when_debug(): void
@@ -769,18 +769,18 @@ class KernelTest extends TestCase
         $this->assertGreaterThan(0, $kernel->getStartTime());
     }
 
-    public function test_get_start_time_returns_negative_infinity_before_boot_without_debug(): void
+    public function test_get_start_time_returns_null_before_boot_without_debug(): void
     {
         $kernel = new Kernel(new Testing());
 
-        $this->assertSame(-INF, $kernel->getStartTime());
+        $this->assertNull($kernel->getStartTime());
     }
 
-    public function test_get_start_time_returns_negative_infinity_before_boot_with_debug(): void
+    public function test_get_start_time_returns_null_before_boot_with_debug(): void
     {
         $kernel = new Kernel(new Testing(), debug: true);
 
-        $this->assertSame(-INF, $kernel->getStartTime());
+        $this->assertNull($kernel->getStartTime());
     }
 
     public function test_it_uses_default_container_builder(): void

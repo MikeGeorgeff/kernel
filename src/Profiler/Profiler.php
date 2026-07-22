@@ -22,7 +22,7 @@ final class Profiler implements DebuggableInterface
 
     public function initProfile(string $name): Profile
     {
-        $profile = new Profile();
+        $profile = new Profile($name);
 
         $profile->start();
 

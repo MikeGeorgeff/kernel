@@ -396,11 +396,11 @@ class Kernel implements KernelInterface
         return $this->container;
     }
 
-    public function getStartTime(): float
+    public function getStartTime(): ?float
     {
         return $this->profiler?->hasProfile('boot')
             ? $this->profiler->getProfile('boot')->getStartTime()
-            : -INF;
+            : null;
     }
 
     public function getDebugInfo(): array

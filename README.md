@@ -627,7 +627,7 @@ $kernel->getDebugInfo(); // profiles + components (module/service-resolution/res
 
 The `getDebugInfo()` array contains:
 
-- `profiles.boot` — timing for each boot phase
+- `profiles.boot` — timing and memory usage for each boot phase
 - `profiles.shutdown` — timing for the `shuttingDown` and `afterShutdown` phases; only present once `shutdown()` has actually been called
 - `components.modules` — module loader state: which module classes were added and whether each phase has run; present as soon as debug mode is enabled, even before `boot()` is called
 - `components.service.resolution` — which services have been resolved and which remain unresolved; each resolved entry includes a `resolutionCount` and, for services implementing `DebuggableInterface`, a `debugInfo` key; only present once `boot()` has run
@@ -635,7 +635,7 @@ The `getDebugInfo()` array contains:
 
 Debuggable services registered against the profiler are nested under `components` specifically to keep that namespace separate from `profiles` — a registered name could otherwise collide with a profile name (e.g. a service registered as `boot`).
 
-When debug is disabled, `getStartTime()` returns `-INF` and `getDebugInfo()` returns `[]`.
+When debug is disabled, `getStartTime()` returns `null` and `getDebugInfo()` returns `[]`. `getStartTime()` also returns `null` in debug mode before `boot()` has been called.
 
 #### DebuggableInterface
 
