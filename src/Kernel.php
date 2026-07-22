@@ -37,11 +37,6 @@ class Kernel implements KernelInterface
 
     private bool $gcEnabled = false;
 
-    /**
-     * @var array<string, mixed>
-     */
-    private array $storage = [];
-
     public function __construct(
         EnvironmentInterface $environment,
         ?ContainerBuilderInterface $builder = null,
@@ -84,14 +79,20 @@ class Kernel implements KernelInterface
 
         $profile = $this->profiler?->initProfile('boot');
 
+        /** @var array<string, mixed> */
+        $config = [];
+
+        /** @var array<string, bool> */
+        $shared = [];
+
         $this->profile($profile, 'preBoot', function () {
             $this->hooks->invokeOnBootingCallbacks($this);
         });
 
         $this->booting = true;
 
-        $this->profile($profile, 'moduleLoad', function () {
-            $this->storage['module.config'] = $this->modules->load($this->environment);
+        $this->profile($profile, 'moduleLoad', function () use (&$config) {
+            $config = $this->modules->load($this->environment);
         });
 
         $this->profile($profile, 'moduleRegistration', function () {
@@ -110,10 +111,8 @@ class Kernel implements KernelInterface
             $this->definitions->applyDecorators();
         });
 
-        $this->profile($profile, 'serviceRegistration', function () {
+        $this->profile($profile, 'serviceRegistration', function () use (&$shared, $config) {
             $tags = [];
-
-            $this->storage['services.shared'] = [];
 
             foreach ($this->definitions->all() as $definition) {
                 $id = $definition->getId();
@@ -121,7 +120,7 @@ class Kernel implements KernelInterface
                 $this->builder->register($id, $definition->getFactory(), $definition->isShared(), $definition->getAliases());
 
                 if ($definition->isShared()) {
-                    $this->storage['services.shared'][$id] = true;
+                    $shared[$id] = true;
                 }
 
                 foreach ($definition->getTags() as $tag) {
@@ -135,21 +134,10 @@ class Kernel implements KernelInterface
                 true
             );
 
-            $this->builder->register(
-                Config\ConfigInterface::class,
-                function () {
-                    /** @var array<string, mixed> */
-                    $config = $this->storage['module.config'] ?? [];
-
-                    unset($this->storage['module.config']);
-
-                    return new Config\Config($config);
-                },
-                true
-            );
+            $this->builder->register(Config\ConfigInterface::class, fn() => new Config\Config($config), true);
         });
 
-        $this->profile($profile, 'containerInit', function () {
+        $this->profile($profile, 'containerInit', function () use ($shared) {
             if ($this->isDebug()) {
                 $services = new Debug\ServiceResolution($this->definitions->getRaw());
 
@@ -161,11 +149,6 @@ class Kernel implements KernelInterface
 
                 $this->profiler?->register($services, 'service.resolution');
             }
-
-            /** @var array<string, bool> */
-            $shared = $this->storage['services.shared'];
-
-            unset($this->storage['services.shared']);
 
             $this->builder->onResolved(function (string $id, mixed $resolved) use ($shared) {
                 if ($resolved instanceof Contract\ResettableInterface && isset($shared[$id])) {
@@ -208,8 +191,6 @@ class Kernel implements KernelInterface
             $this->hooks->invokeOnShutdownCallbacks($this);
 
             $this->container = null;
-            $this->storage   = [];
-
             $this->resetter->gc();
         });
 
