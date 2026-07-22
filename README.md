@@ -332,7 +332,7 @@ Numeric strings are intentionally left as strings — port numbers and similar v
 
 #### Reading Config
 
-`Config\ConfigInterface` (resolved from the container) exposes `has()`, `get()`, `isEmpty()`, and `branch()` for fluent traversal into nested array config values:
+`Config\ConfigInterface` (resolved from the container) exposes `has()`, `get()`, `all()`, `isEmpty()`, and `branch()` for fluent traversal into nested array config values:
 
 ```php
 use Georgeff\Kernel\Config\ConfigInterface;
@@ -342,6 +342,7 @@ $config = $kernel->getContainer()->get(ConfigInterface::class);
 $config->has('db');                    // true
 $config->branch('db')->get('port');    // 5432
 $config->branch('missing')->isEmpty(); // true — a missing key produces an empty (not null) branch
+$config->all();                        // the full merged config as a plain array
 ```
 
 `get(string $name, mixed $default = null)` checks `has()` first, so an explicitly-stored `null` value is returned as-is rather than falling back to `$default`. `branch()` throws `ConfigException` if the value at that key exists but isn't an array with non-numeric string keys — a scalar or a list value can't silently be treated as a nested config, so a config-shape mistake fails loud instead of quietly returning nothing further down the chain.

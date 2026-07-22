@@ -27,6 +27,11 @@ final class Config implements ConfigInterface
         $this->config = $config;
     }
 
+    public function all(): array
+    {
+        return $this->config;
+    }
+
     public function isEmpty(): bool
     {
         return empty($this->config);

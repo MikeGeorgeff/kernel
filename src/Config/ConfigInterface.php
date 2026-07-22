@@ -4,6 +4,13 @@ namespace Georgeff\Kernel\Config;
 
 interface ConfigInterface
 {
+    /**
+     * Get the raw config array
+     *
+     * @return array<string, mixed>
+     */
+    public function all(): array;
+
     public function isEmpty(): bool;
 
     public function has(string $name): bool;

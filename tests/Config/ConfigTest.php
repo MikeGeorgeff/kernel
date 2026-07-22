@@ -15,6 +15,20 @@ class ConfigTest extends TestCase
         $this->assertInstanceOf(ConfigInterface::class, new Config([]));
     }
 
+    public function test_all_returns_the_full_config_array(): void
+    {
+        $config = new Config(['db.host' => 'localhost', 'cache.driver' => 'redis']);
+
+        $this->assertSame(['db.host' => 'localhost', 'cache.driver' => 'redis'], $config->all());
+    }
+
+    public function test_all_returns_an_empty_array_for_an_empty_config(): void
+    {
+        $config = new Config([]);
+
+        $this->assertSame([], $config->all());
+    }
+
     public function test_has_returns_true_for_an_existing_key(): void
     {
         $config = new Config(['db.host' => 'localhost']);
