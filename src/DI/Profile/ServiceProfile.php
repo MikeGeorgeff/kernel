@@ -18,7 +18,10 @@ final class ServiceProfile implements DebuggableInterface
 
     private ?Phase $resolving = null;
 
-    private mixed $instance = null;
+    /**
+     * @var array<array-key, mixed>
+     */
+    private array $debugInfo = [];
 
     public function __construct(public readonly string $id) {}
 
@@ -42,11 +45,13 @@ final class ServiceProfile implements DebuggableInterface
 
         $this->resolving->stop();
 
-        $this->instance = $instance;
-
         $this->resolutions[] = $this->resolving;
 
         $this->resolving = null;
+
+        if ($instance instanceof DebuggableInterface) {
+            $this->debugInfo = $instance->getDebugInfo();
+        }
 
         return $this;
     }
@@ -62,7 +67,7 @@ final class ServiceProfile implements DebuggableInterface
         $resolutions = [];
 
         foreach ($this->resolutions as $resolution) {
-            $output['count']    += 1;
+            $output['count'] += 1;
 
             if (!$resolution->isIncomplete()) {
                 $output['duration'] += $resolution->getDuration();
@@ -75,8 +80,8 @@ final class ServiceProfile implements DebuggableInterface
 
         $output['resolutions'] = $resolutions;
 
-        if ($this->instance instanceof DebuggableInterface) {
-            $output['debug.info'] = $this->instance->getDebugInfo();
+        if ([] !== $this->debugInfo) {
+            $output['debug.info'] = $this->debugInfo;
         }
 
         return $output;
