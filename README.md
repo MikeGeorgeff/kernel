@@ -149,6 +149,8 @@ $middleware = $registry->getTagged('http.middleware');
 // [FirstMiddleware, SecondMiddleware] — resolved in registration order
 ```
 
+`getTaggedIds(string $tag): string[]` returns the container ids for a tag without resolving them — used internally by [`resetShared()`'s tag-scoped reset](#resetting-services), and available directly if you need the ids without triggering resolution.
+
 Tagging the same id with the same tag more than once is idempotent — `tag()` only adds the tag if it isn't already present.
 
 ### Service Decoration
@@ -603,6 +605,27 @@ final class FlakyCache implements ThresholdAwareResettableInterface
 ```
 
 Failures are tracked per container id (not per class, so the same class backing two different ids is tracked independently) and accumulate across separate calls to `resetShared()` until a successful reset clears that service's failure history.
+
+#### Scoping a reset by tag
+
+Pass one or more tags to reset only the resettable services carrying at least one of them, instead of every tracked service:
+
+```php
+$kernel->define(ConnectionPool::class, fn() => new ConnectionPool())->share()->tag('db');
+$kernel->define(SessionCache::class, fn() => new SessionCache())->share()->tag('cache');
+
+$kernel->boot();
+$kernel->getContainer()->get(ConnectionPool::class);
+$kernel->getContainer()->get(SessionCache::class);
+
+$kernel->resetShared(3, 'db');
+// Only ConnectionPool::reset() was called — SessionCache is untouched.
+
+$kernel->resetShared(3, 'db', 'cache');
+// Both are reset — a service tagged with more than one requested tag is still only reset once.
+```
+
+Calling `resetShared()` with no tags resets everything, same as before. A tag that doesn't match any currently-tracked resettable service — because nothing was tagged with it, or because the tagged services haven't been resolved yet — is a silent no-op rather than an error, so a mistyped tag name will not raise anything; double-check the tag string if a scoped reset doesn't appear to be doing anything.
 
 ### Custom Container Builder
 

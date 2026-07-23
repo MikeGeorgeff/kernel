@@ -113,6 +113,118 @@ class ServiceResetterTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
+    // reset() with $ids — scoped reset
+    // -------------------------------------------------------------------------
+
+    public function test_reset_with_ids_only_resets_the_matching_services(): void
+    {
+        $serviceA = new class implements ResettableInterface {
+            public bool $wasReset = false;
+            public function reset(): void { $this->wasReset = true; }
+        };
+
+        $serviceB = new class implements ResettableInterface {
+            public bool $wasReset = false;
+            public function reset(): void { $this->wasReset = true; }
+        };
+
+        $resetter = new ServiceResetter();
+        $resetter->add('service.a', $serviceA);
+        $resetter->add('service.b', $serviceB);
+
+        $resetter->reset(3, ['service.a']);
+
+        $this->assertTrue($serviceA->wasReset);
+        $this->assertFalse($serviceB->wasReset);
+    }
+
+    public function test_reset_with_ids_resets_every_matching_service(): void
+    {
+        $serviceA = new class implements ResettableInterface {
+            public bool $wasReset = false;
+            public function reset(): void { $this->wasReset = true; }
+        };
+
+        $serviceB = new class implements ResettableInterface {
+            public bool $wasReset = false;
+            public function reset(): void { $this->wasReset = true; }
+        };
+
+        $serviceC = new class implements ResettableInterface {
+            public bool $wasReset = false;
+            public function reset(): void { $this->wasReset = true; }
+        };
+
+        $resetter = new ServiceResetter();
+        $resetter->add('service.a', $serviceA);
+        $resetter->add('service.b', $serviceB);
+        $resetter->add('service.c', $serviceC);
+
+        $resetter->reset(3, ['service.a', 'service.c']);
+
+        $this->assertTrue($serviceA->wasReset);
+        $this->assertFalse($serviceB->wasReset);
+        $this->assertTrue($serviceC->wasReset);
+    }
+
+    public function test_reset_with_ids_ignores_an_id_that_was_never_added(): void
+    {
+        $service = new class implements ResettableInterface {
+            public bool $wasReset = false;
+            public function reset(): void { $this->wasReset = true; }
+        };
+
+        $resetter = new ServiceResetter();
+        $resetter->add('service.a', $service);
+
+        $resetter->reset(3, ['service.unknown']);
+
+        $this->assertFalse($service->wasReset);
+    }
+
+    public function test_reset_with_a_null_ids_array_resets_everything(): void
+    {
+        $serviceA = new class implements ResettableInterface {
+            public bool $wasReset = false;
+            public function reset(): void { $this->wasReset = true; }
+        };
+
+        $serviceB = new class implements ResettableInterface {
+            public bool $wasReset = false;
+            public function reset(): void { $this->wasReset = true; }
+        };
+
+        $resetter = new ServiceResetter();
+        $resetter->add('service.a', $serviceA);
+        $resetter->add('service.b', $serviceB);
+
+        $resetter->reset(3, null);
+
+        $this->assertTrue($serviceA->wasReset);
+        $this->assertTrue($serviceB->wasReset);
+    }
+
+    public function test_reset_with_an_explicit_empty_ids_array_resets_nothing(): void
+    {
+        $serviceA = new class implements ResettableInterface {
+            public bool $wasReset = false;
+            public function reset(): void { $this->wasReset = true; }
+        };
+
+        $resetter = new ServiceResetter();
+        $resetter->add('service.a', $serviceA);
+
+        // An empty (but non-null) $ids is a real, deliberate filter that matches
+        // nothing — distinct from omitting $ids entirely, which resets everything.
+        // This is the exact distinction Kernel::resetShared() relies on: a
+        // requested tag that matches zero services must produce this case, not
+        // fall back to resetting everything.
+        $resetter->reset(3, []);
+
+        $this->assertFalse($serviceA->wasReset);
+    }
+
+    // -------------------------------------------------------------------------
     // failure threshold — callsite $failureThreshold
     // -------------------------------------------------------------------------
 

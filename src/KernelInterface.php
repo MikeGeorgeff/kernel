@@ -192,7 +192,7 @@ interface KernelInterface extends DebuggableInterface
      *
      * @throws KernelExceptionInterface
      */
-    public function resetShared(int $failureThreshold = 3): static;
+    public function resetShared(int $failureThreshold = 3, string ...$tags): static;
 
     /**
      * Add a module to the kernel

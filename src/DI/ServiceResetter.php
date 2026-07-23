@@ -55,11 +55,17 @@ final class ServiceResetter implements DebuggableInterface
     }
 
     /**
+     * @param null|string[] $ids
+     *
      * @throws ServiceResetException
      */
-    public function reset(int $failureThreshold = 3): void
+    public function reset(int $failureThreshold = 3, ?array $ids = null): void
     {
-        foreach (array_reverse($this->services, true) as $id => $service) {
+        $toReset = null === $ids
+            ? $this->services
+            : array_intersect_key($this->services, array_flip($ids));
+
+        foreach (array_reverse($toReset, true) as $id => $service) {
             try {
                 $service->reset();
 

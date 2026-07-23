@@ -2121,6 +2121,90 @@ class KernelTest extends TestCase
         $this->assertSame(0, $resolved->count);
     }
 
+    public function test_reset_shared_with_a_tag_only_resets_services_carrying_that_tag(): void
+    {
+        $tagged = new class implements \Georgeff\Kernel\Contract\ResettableInterface {
+            public int $count = 5;
+            public function reset(): void
+            {
+                $this->count = 0;
+            }
+        };
+
+        $untagged = new class implements \Georgeff\Kernel\Contract\ResettableInterface {
+            public int $count = 5;
+            public function reset(): void
+            {
+                $this->count = 0;
+            }
+        };
+
+        $kernel = new Kernel(new Testing());
+        $kernel->define('tagged.service', fn() => $tagged)->share()->tag('cache');
+        $kernel->define('untagged.service', fn() => $untagged)->share();
+        $kernel->boot();
+
+        $kernel->getContainer()->get('tagged.service');
+        $kernel->getContainer()->get('untagged.service');
+
+        $kernel->resetShared(3, 'cache');
+
+        $this->assertSame(0, $tagged->count);
+        $this->assertSame(5, $untagged->count);
+    }
+
+    public function test_reset_shared_with_multiple_tags_resets_the_union_of_matching_services(): void
+    {
+        $a = new class implements \Georgeff\Kernel\Contract\ResettableInterface {
+            public int $count = 5;
+            public function reset(): void { $this->count = 0; }
+        };
+
+        $b = new class implements \Georgeff\Kernel\Contract\ResettableInterface {
+            public int $count = 5;
+            public function reset(): void { $this->count = 0; }
+        };
+
+        $c = new class implements \Georgeff\Kernel\Contract\ResettableInterface {
+            public int $count = 5;
+            public function reset(): void { $this->count = 0; }
+        };
+
+        $kernel = new Kernel(new Testing());
+        $kernel->define('service.a', fn() => $a)->share()->tag('cache');
+        $kernel->define('service.b', fn() => $b)->share()->tag('other');
+        $kernel->define('service.c', fn() => $c)->share();
+        $kernel->boot();
+
+        $kernel->getContainer()->get('service.a');
+        $kernel->getContainer()->get('service.b');
+        $kernel->getContainer()->get('service.c');
+
+        $kernel->resetShared(3, 'cache', 'other');
+
+        $this->assertSame(0, $a->count);
+        $this->assertSame(0, $b->count);
+        $this->assertSame(5, $c->count);
+    }
+
+    public function test_reset_shared_with_an_unknown_tag_resets_nothing(): void
+    {
+        $service = new class implements \Georgeff\Kernel\Contract\ResettableInterface {
+            public int $count = 5;
+            public function reset(): void { $this->count = 0; }
+        };
+
+        $kernel = new Kernel(new Testing());
+        $kernel->define('my.service', fn() => $service)->share()->tag('cache');
+        $kernel->boot();
+
+        $kernel->getContainer()->get('my.service');
+
+        $kernel->resetShared(3, 'unknown.tag');
+
+        $this->assertSame(5, $service->count);
+    }
+
     public function test_reset_shared_does_not_reset_a_service_that_was_never_resolved(): void
     {
         $service = new class implements \Georgeff\Kernel\Contract\ResettableInterface {

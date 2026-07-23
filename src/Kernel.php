@@ -362,13 +362,29 @@ class Kernel implements KernelInterface
         return $this->definitions->override($id, $factory, $preserve);
     }
 
-    public function resetShared(int $failureThreshold = 3): static
+    public function resetShared(int $failureThreshold = 3, string ...$tags): static
     {
         KernelException::throwIfNot($this->isBooted(), 'Kernel has not been booted, cannot reset shared services');
 
         KernelException::throwIf($this->isShutdown(), 'Kernel is shutdown, cannot reset shared services');
 
-        $this->resetter->reset($failureThreshold);
+        $ids = null;
+
+        if ([] !== $tags) {
+            $ids = [];
+
+            $registry = $this->getContainer()->get(DI\TagRegistryInterface::class);
+
+            foreach ($tags as $tag) {
+                foreach ($registry->getTaggedIds($tag) as $id) {
+                    $ids[$id] = true;
+                }
+            }
+
+            $ids = array_keys($ids);
+        }
+
+        $this->resetter->reset($failureThreshold, $ids);
 
         return $this;
     }

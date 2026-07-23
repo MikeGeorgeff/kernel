@@ -27,4 +27,9 @@ final class TagRegistry implements TagRegistryInterface
 
         return $services;
     }
+
+    public function getTaggedIds(string $tag): array
+    {
+        return $this->tags[$tag] ?? [];
+    }
 }

@@ -88,6 +88,23 @@ class TagRegistryTest extends TestCase
         $registry->getTagged('my.tag');
     }
 
+    public function test_get_tagged_ids_returns_empty_array_for_unknown_tag(): void
+    {
+        $registry = new TagRegistry($this->makeContainer([]), []);
+
+        $this->assertSame([], $registry->getTaggedIds('unknown'));
+    }
+
+    public function test_get_tagged_ids_returns_the_raw_ids_without_resolving(): void
+    {
+        $container = $this->createMock(ContainerInterface::class);
+        $container->expects($this->never())->method('get');
+
+        $registry = new TagRegistry($container, ['my.tag' => ['service.a', 'service.b']]);
+
+        $this->assertSame(['service.a', 'service.b'], $registry->getTaggedIds('my.tag'));
+    }
+
     /**
      * @param array<string, mixed> $services
      */
