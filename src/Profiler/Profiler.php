@@ -82,13 +82,14 @@ final class Profiler implements DebuggableInterface
 
         foreach ($data as $key => $value) {
             $sanitized[$key] = match (true) {
-                is_array($value)              => $this->sanitize($value),
-                $value instanceof \Closure    => sprintf('Closure#%d', spl_object_id($value)),
-                $value instanceof \BackedEnum => $value->value,
-                $value instanceof \UnitEnum   => $value->name,
-                is_object($value)             => $value::class,
-                is_resource($value)           => get_resource_type($value),
-                default                       => $value
+                is_scalar($value) || null === $value => $value,
+                is_array($value)                     => $this->sanitize($value),
+                $value instanceof \Closure           => sprintf('Closure#%d', spl_object_id($value)),
+                $value instanceof \BackedEnum        => $value->value,
+                $value instanceof \UnitEnum          => $value->name,
+                is_object($value)                    => $value::class,
+                is_resource($value)                  => get_resource_type($value),
+                default                              => $value
             };
         }
 
