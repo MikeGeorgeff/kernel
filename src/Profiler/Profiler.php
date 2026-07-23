@@ -65,9 +65,33 @@ final class Profiler implements DebuggableInterface
         }
 
         foreach ($this->registry as $name => $debuggle) {
-            $output['components'][$name] = $debuggle->getDebugInfo();
+            $output['components'][$name] = $this->sanitize($debuggle->getDebugInfo());
         }
 
         return $output;
+    }
+
+    /**
+     * @param array<array-key, mixed> $data
+     *
+     * @return array<array-key, mixed>
+     */
+    private function sanitize(array $data): array
+    {
+        $sanitized = [];
+
+        foreach ($data as $key => $value) {
+            $sanitized[$key] = match (true) {
+                is_array($value)              => $this->sanitize($value),
+                $value instanceof \Closure    => sprintf('Closure#%d', spl_object_id($value)),
+                $value instanceof \BackedEnum => $value->value,
+                $value instanceof \UnitEnum   => $value->name,
+                is_object($value)             => $value::class,
+                is_resource($value)           => get_resource_type($value),
+                default                       => $value
+            };
+        }
+
+        return $sanitized;
     }
 }

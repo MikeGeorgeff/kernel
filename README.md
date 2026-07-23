@@ -676,6 +676,8 @@ final class ConnectionPool implements DebuggableInterface
 }
 ```
 
+`getDebugInfo()` is expected to return only scalars, `null`, and nested arrays of the same — see `DebuggableInterface`'s own docblock for the full contract. If something else slips through anyway, `components` is sanitized before being returned: objects are reduced to their class name, `Closure` instances to a `Closure#<id>` reference string, enum cases to their backed value (or their case name for a non-backed enum), and resources to their resource type (e.g. `'stream'`). This is a defensive safety net so a misbehaving `getDebugInfo()` can't produce unprintable/unserializable debug output — it's not a substitute for returning meaningful data in the first place. `profiles` is never sanitized, since it's built entirely from this package's own internal timing data and can't contain anything unsafe.
+
 ### Exceptions
 
 Every exception this package throws implements `Exception\KernelExceptionInterface`, so callers can catch one type regardless of which specific exception was thrown:

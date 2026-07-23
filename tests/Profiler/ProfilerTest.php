@@ -195,4 +195,127 @@ class ProfilerTest extends TestCase
         $this->assertArrayHasKey('shutdown', $info['profiles']);
         $this->assertSame(['loaded' => true], $info['components']['modules']);
     }
+
+    // -------------------------------------------------------------------------
+    // getDebugInfo() — component sanitization
+    // -------------------------------------------------------------------------
+
+    public function test_get_debug_info_reduces_a_plain_object_to_its_class_name(): void
+    {
+        $object = new \stdClass();
+
+        $profiler = new Profiler();
+        $profiler->register(new class ($object) implements DebuggableInterface {
+            public function __construct(private object $object) {}
+            public function getDebugInfo(): array { return ['value' => $this->object]; }
+        }, 'my.service');
+
+        $this->assertSame(\stdClass::class, $profiler->getDebugInfo()['components']['my.service']['value']);
+    }
+
+    public function test_get_debug_info_reduces_a_closure_to_a_reference_id_string(): void
+    {
+        $closure = function () {};
+
+        $profiler = new Profiler();
+        $profiler->register(new class ($closure) implements DebuggableInterface {
+            public function __construct(private \Closure $closure) {}
+            public function getDebugInfo(): array { return ['value' => $this->closure]; }
+        }, 'my.service');
+
+        $value = $profiler->getDebugInfo()['components']['my.service']['value'];
+
+        $this->assertIsString($value);
+        $this->assertMatchesRegularExpression('/^Closure#\d+$/', $value);
+    }
+
+    public function test_get_debug_info_reduces_a_resource_to_its_resource_type(): void
+    {
+        $resource = fopen('php://memory', 'r');
+        $this->assertIsResource($resource);
+
+        $profiler = new Profiler();
+        $profiler->register(new class ($resource) implements DebuggableInterface {
+            /** @param resource $resource */
+            public function __construct(private $resource) {}
+            public function getDebugInfo(): array { return ['value' => $this->resource]; }
+        }, 'my.service');
+
+        $this->assertSame('stream', $profiler->getDebugInfo()['components']['my.service']['value']);
+
+        fclose($resource);
+    }
+
+    public function test_get_debug_info_sanitizes_objects_nested_inside_arrays(): void
+    {
+        $object = new \stdClass();
+
+        $profiler = new Profiler();
+        $profiler->register(new class ($object) implements DebuggableInterface {
+            public function __construct(private object $object) {}
+            public function getDebugInfo(): array { return ['outer' => ['inner' => $this->object]]; }
+        }, 'my.service');
+
+        $this->assertSame(
+            \stdClass::class,
+            $profiler->getDebugInfo()['components']['my.service']['outer']['inner']
+        );
+    }
+
+    public function test_get_debug_info_leaves_scalars_and_null_untouched(): void
+    {
+        $profiler = new Profiler();
+        $profiler->register(new class implements DebuggableInterface {
+            public function getDebugInfo(): array
+            {
+                return ['string' => 'value', 'int' => 1, 'float' => 1.5, 'bool' => true, 'null' => null];
+            }
+        }, 'my.service');
+
+        $this->assertSame(
+            ['string' => 'value', 'int' => 1, 'float' => 1.5, 'bool' => true, 'null' => null],
+            $profiler->getDebugInfo()['components']['my.service']
+        );
+    }
+
+    public function test_get_debug_info_reduces_a_backed_enum_to_its_value(): void
+    {
+        $profiler = new Profiler();
+        $profiler->register(new class implements DebuggableInterface {
+            public function getDebugInfo(): array { return ['value' => ProfilerTestBackedEnum::First]; }
+        }, 'my.service');
+
+        $this->assertSame('first', $profiler->getDebugInfo()['components']['my.service']['value']);
+    }
+
+    public function test_get_debug_info_reduces_a_pure_enum_to_its_name(): void
+    {
+        $profiler = new Profiler();
+        $profiler->register(new class implements DebuggableInterface {
+            public function getDebugInfo(): array { return ['value' => ProfilerTestPureEnum::First]; }
+        }, 'my.service');
+
+        $this->assertSame('First', $profiler->getDebugInfo()['components']['my.service']['value']);
+    }
+
+    public function test_get_debug_info_does_not_sanitize_the_profiles_key(): void
+    {
+        $profiler = new Profiler();
+        $profile  = $profiler->initProfile('boot');
+        $profile->stop();
+
+        $duration = $profiler->getDebugInfo()['profiles']['boot']['duration'];
+
+        $this->assertIsFloat($duration);
+    }
+}
+
+enum ProfilerTestBackedEnum: string
+{
+    case First = 'first';
+}
+
+enum ProfilerTestPureEnum
+{
+    case First;
 }
