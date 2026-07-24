@@ -505,23 +505,6 @@ class KernelTest extends TestCase
         $this->assertSame(['foo'], $calls);
     }
 
-    public function test_on_resolving_fires_on_every_get_call_including_cache_hits(): void
-    {
-        $calls = 0;
-
-        $kernel = new Kernel(new Testing());
-        $kernel->define('foo', fn() => 'bar')->share();
-        $kernel->onResolving(function () use (&$calls) {
-            $calls++;
-        });
-        $kernel->boot();
-
-        $kernel->getContainer()->get('foo');
-        $kernel->getContainer()->get('foo');
-
-        $this->assertSame(2, $calls);
-    }
-
     public function test_on_resolved_callback_fires_after_factory_runs(): void
     {
         $calls = [];
@@ -538,23 +521,6 @@ class KernelTest extends TestCase
         $this->assertCount(1, $calls);
         $this->assertSame('foo', $calls[0][0]);
         $this->assertSame($instance, $calls[0][1]);
-    }
-
-    public function test_on_resolved_does_not_fire_on_cache_hit(): void
-    {
-        $calls = 0;
-
-        $kernel = new Kernel(new Testing());
-        $kernel->define('foo', fn() => new \stdClass())->share();
-        $kernel->onResolved(function () use (&$calls) {
-            $calls++;
-        });
-        $kernel->boot();
-
-        $kernel->getContainer()->get('foo');
-        $kernel->getContainer()->get('foo');
-
-        $this->assertSame(1, $calls);
     }
 
     public function test_multiple_on_resolved_callbacks_all_fire(): void

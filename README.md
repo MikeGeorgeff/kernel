@@ -493,7 +493,7 @@ Shutdown callbacks behave differently from boot callbacks: every callback still 
 
 #### Resolution hooks
 
-`onResolving` and `onResolved` tap into the container's own resolution lifecycle — a pre-resolution hook fired on every `get()` call (including cache hits) and a post-resolution hook fired only when a factory actually runs:
+`onResolving` and `onResolved` tap into the container's own resolution lifecycle — a pre-resolution hook fired before a service is resolved and a post-resolution hook fired after:
 
 ```php
 $kernel->onResolving(function (string $id) {

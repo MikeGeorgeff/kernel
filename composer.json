@@ -12,7 +12,7 @@
   "license": "MIT",
   "require": {
     "php": "^8.4",
-    "georgeff/container": "^1.1",
+    "georgeff/container": "^2.0",
     "psr/container": "^2.0"
   },
   "require-dev": {
