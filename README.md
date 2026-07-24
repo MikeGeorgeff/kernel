@@ -19,7 +19,7 @@ use Georgeff\Kernel\Kernel;
 $kernel = new Kernel(new Production());
 
 $kernel->define('logger', fn() => new FileLogger('/var/log/app.log'))->share();
-$kernel->define('mailer', fn() => new SmtpMailer('localhost'))->share();
+$kernel->define('mailer', fn() => new SmtpMailer('localhost'));
 
 $kernel->boot();
 
@@ -99,6 +99,8 @@ $kernel->define('db.connection', fn() => new PdoConnection($dsn, $user, $pass))
 
 All three return the same definition instance, so they can be chained in any order.
 
+A definition is not shared by default — each resolution constructs a new instance. Reach for `share()` only when a service actually needs to stay a single instance across the process: something expensive to construct, or something stateful other services need to see the same instance of, like a logger or a database connection.
+
 `define()` throws `DefinitionException` if the id is already defined — each id can only be claimed once. Use `override()` to intentionally replace an existing definition, or `defineFallback()` to register a definition that's only used if nothing else claims the id.
 
 ### Service Definition Fallbacks
@@ -133,8 +135,8 @@ Multiple modules can register a fallback for the same id without conflict. Unlik
 Tags group service definitions under a shared label so they can be collected and resolved together:
 
 ```php
-$kernel->define(FirstMiddleware::class, fn() => new FirstMiddleware())->share()->tag('http.middleware');
-$kernel->define(SecondMiddleware::class, fn() => new SecondMiddleware())->share()->tag('http.middleware');
+$kernel->define(FirstMiddleware::class, fn() => new FirstMiddleware())->tag('http.middleware');
+$kernel->define(SecondMiddleware::class, fn() => new SecondMiddleware())->tag('http.middleware');
 ```
 
 Retrieve all services for a tag via `TagRegistryInterface` after boot:
@@ -459,7 +461,7 @@ The kernel provides four hooks for tapping into the boot and shutdown lifecycle.
 
 ```php
 $kernel->onBooting(function (KernelInterface $kernel) {
-    $kernel->define('dynamic', fn() => new SomeService())->share();
+    $kernel->define('dynamic', fn() => new SomeService());
 });
 ```
 
