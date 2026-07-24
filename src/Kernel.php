@@ -218,9 +218,6 @@ class Kernel implements KernelInterface
         $profile?->stop();
     }
 
-    /**
-     * @inheritdoc
-     */
     public function shutdown(): void
     {
         if ($this->isShutdown() || !$this->isBooted()) {
@@ -245,49 +242,31 @@ class Kernel implements KernelInterface
         $profile?->stop();
     }
 
-    /**
-     * @inheritdoc
-     */
     public function isBooting(): bool
     {
         return $this->booting;
     }
 
-    /**
-     * @inheritdoc
-     */
     public function isBooted(): bool
     {
         return $this->booted;
     }
 
-    /**
-     * @inheritdoc
-     */
     public function isShutdown(): bool
     {
         return $this->shutdown;
     }
 
-    /**
-     * @inheritdoc
-     */
     public function isDebug(): bool
     {
         return $this->debug;
     }
 
-    /**
-     * @inheritdoc
-     */
     public function getEnvironment(): EnvironmentInterface
     {
         return $this->environment;
     }
 
-    /**
-     * @inheritdoc
-     */
     public function onBooting(callable $callback): static
     {
         KernelException::throwIf($this->isBooted(), 'Kernel has already been booted, cannot add new pre-boot callbacks');
@@ -297,9 +276,6 @@ class Kernel implements KernelInterface
         return $this;
     }
 
-    /**
-     * @inheritdoc
-     */
     public function onBooted(callable $callback): static
     {
         KernelException::throwIf($this->isBooted(), 'Kernel has already been booted, cannot add new post-boot callbacks');
@@ -309,9 +285,6 @@ class Kernel implements KernelInterface
         return $this;
     }
 
-    /**
-     * @inheritdoc
-     */
     public function onShutdown(callable $callback): static
     {
         KernelException::throwIf($this->isShutdown(), 'Kernel has already been shutdown, cannot add new pre-shutdown callbacks');
@@ -321,9 +294,6 @@ class Kernel implements KernelInterface
         return $this;
     }
 
-    /**
-     * @inheritdoc
-     */
     public function afterShutdown(callable $callback): static
     {
         KernelException::throwIf($this->isShutdown(), 'Kernel has already been shutdown, cannot add new post-shutdown callbacks');
