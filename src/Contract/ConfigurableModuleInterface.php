@@ -2,10 +2,15 @@
 
 namespace Georgeff\Kernel\Contract;
 
+/**
+ * Adds environment-driven configuration to ModuleInterface: implement when a module needs
+ * to contribute config values, e.g. from Env::get().
+ */
 interface ConfigurableModuleInterface extends ModuleInterface
 {
     /**
-     * Get module configuration
+     * Called during the moduleLoad phase, before register(). Merged across every module's
+     * config() into Config\ConfigInterface; a later module silently wins on key collision.
      *
      * @return array<string, mixed>
      */

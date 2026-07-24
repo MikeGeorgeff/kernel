@@ -5,6 +5,12 @@ namespace Georgeff\Kernel\Support;
 use Georgeff\Kernel\Contract\EnvironmentInterface;
 use Georgeff\Kernel\Exception\EnvironmentException;
 
+/**
+ * Optional name-string -> EnvironmentInterface class registry, e.g. for turning APP_ENV
+ * into an environment instance at bootstrap. Not wired into Kernel; construct an
+ * EnvironmentInterface however you like if you don't want this. Ships pre-registered with
+ * the five stock environments (production, staging, development, testing, local).
+ */
 final class EnvironmentResolver
 {
     /**

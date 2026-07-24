@@ -70,6 +70,44 @@ class Kernel implements KernelInterface
         }
     }
 
+    /**
+     * Phase order is correctness-critical, not incidental. Several phases only work
+     * because a specific phase already ran before them:
+     *
+     *   1. preBoot             onBooting() callbacks fire before anything else is touched.
+     *   2. moduleLoad          Modules are expanded/composed and config() is collected.
+     *   3. moduleRegistration  Every module's register() runs. This is where define(),
+     *                          defineFallback(), decorate(), and override() calls
+     *                          actually get queued against the definition repository.
+     *   4. serviceFallbacks    Fallbacks collected from every module are merged in as a
+     *                          single pass, only backfilling ids nothing else defined.
+     *                          Must run after moduleRegistration, so every module has
+     *                          had a chance to register a real definition first, and
+     *                          before serviceOverrides, so an override() can legitimately
+     *                          target an id that only exists because a fallback
+     *                          backfilled it (override() throws if its target doesn't
+     *                          exist at all).
+     *   5. serviceOverrides    Overrides replace a target definition's factory outright.
+     *                          Must run before serviceDecoration: decoration wraps
+     *                          whichever factory is currently registered for an id, so
+     *                          if override() ran after decoration it would discard the
+     *                          decorator instead of wrapping the overridden factory.
+     *   6. serviceDecoration   Decorators wrap the current factory for an id: whatever
+     *                          fallback/override resolution already settled it to be by
+     *                          this point.
+     *   7. serviceRegistration Every definition, in its final form, is registered against
+     *                          the container builder, along with the tag registry and
+     *                          Config.
+     *   8. containerInit       The container is actually built from what was registered
+     *                          in serviceRegistration; resolution hooks are wired here.
+     *   9. moduleBoot          Every module's boot() runs, with the container available.
+     *  10. postBoot            onBooted() callbacks fire, including enableGc()'s cleanup.
+     *
+     * The 4→5→6→7 run (serviceFallbacks → serviceOverrides → serviceDecoration →
+     * serviceRegistration) is the one with the least self-evident reasoning: get it
+     * wrong and a fallback or override is silently shadowed or discarded rather than
+     * throwing, since none of these phases guard against running out of order.
+     */
     public function boot(): void
     {
         if ($this->isBooted()) {
