@@ -153,7 +153,7 @@ class DefinitionRepositoryTest extends TestCase
     {
         $repository = new DefinitionRepository();
 
-        $this->assertSame([], $repository->getInstropectionData());
+        $this->assertSame([], $repository->getIntrospectionData());
     }
 
     public function test_get_instropection_data_returns_introspection_data(): void
@@ -162,7 +162,7 @@ class DefinitionRepositoryTest extends TestCase
 
         $repository->add('foo', fn() => 'bar')->share()->alias('baz')->tag('sampled');
 
-        $data = $repository->getInstropectionData();
+        $data = $repository->getIntrospectionData();
 
         $this->assertArrayHasKey('foo', $data);
         $this->assertTrue($data['foo']['shared']);
@@ -177,7 +177,7 @@ class DefinitionRepositoryTest extends TestCase
 
         $definition->share()->alias('baz');
 
-        $raw = $repository->getInstropectionData();
+        $raw = $repository->getIntrospectionData();
 
         $this->assertTrue($raw['foo']['shared']);
         $this->assertSame(['baz'], $raw['foo']['aliases']);

@@ -181,7 +181,7 @@ class Kernel implements KernelInterface
                 assert(null !== $this->profiler);
 
                 $this->profiler->register(
-                    $services = new ServiceResolutionProfile($this->definitions->getInstropectionData()),
+                    $services = new ServiceResolutionProfile($this->definitions->getIntrospectionData()),
                     'service.resolution'
                 );
 

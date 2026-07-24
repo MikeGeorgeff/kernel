@@ -179,7 +179,7 @@ final class DefinitionRepository
     /**
      * @return array<string, array{shared: bool, aliases: string[], tags: string[]}>
      */
-    public function getInstropectionData(): array
+    public function getIntrospectionData(): array
     {
         $output = [];
 
