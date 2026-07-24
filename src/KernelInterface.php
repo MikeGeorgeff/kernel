@@ -227,5 +227,4 @@ interface KernelInterface extends DebuggableInterface
      * @return null|float
      */
     public function getStartTime(): ?float;
-
 }
