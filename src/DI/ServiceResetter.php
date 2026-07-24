@@ -65,7 +65,7 @@ final class ServiceResetter implements DebuggableInterface
             ? $this->services
             : array_intersect_key($this->services, array_flip($ids));
 
-        foreach (array_reverse($toReset, true) as $id => $service) {
+        foreach ($toReset as $id => $service) {
             try {
                 $service->reset();
 

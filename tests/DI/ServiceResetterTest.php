@@ -374,13 +374,14 @@ class ServiceResetterTest extends TestCase
         $failing->shouldFail = true;
 
         $resetter = new ServiceResetter();
-        // Added in this order so, after reset()'s internal array_reverse(),
-        // the failing instance resets first and the healthy instance
-        // (same class, different id) resets second — if failure tracking
-        // were still keyed by class instead of id, the healthy instance's
-        // successful reset would clear the failing instance's failure count.
-        $resetter->add('service.healthy', $healthy);
+        // Added in this order so, under reset()'s plain registration-order
+        // iteration, the failing instance resets first and the healthy
+        // instance (same class, different id) resets second; if failure
+        // tracking were still keyed by class instead of id, the healthy
+        // instance's successful reset would clear the failing instance's
+        // failure count.
         $resetter->add('service.failing', $failing);
+        $resetter->add('service.healthy', $healthy);
 
         $resetter->reset(3);
 
