@@ -1,5 +1,9 @@
 # Kernel
 
+[![CI](https://github.com/MikeGeorgeff/kernel/actions/workflows/ci.yml/badge.svg)](https://github.com/MikeGeorgeff/kernel/actions/workflows/ci.yml)
+[![Coverage Status](https://coveralls.io/repos/github/MikeGeorgeff/kernel/badge.svg?branch=main)](https://coveralls.io/github/MikeGeorgeff/kernel?branch=main)
+[![Packagist Version](https://img.shields.io/packagist/v/georgeff/kernel)](https://packagist.org/packages/georgeff/kernel)
+
 A lightweight application kernel with service container bootstrapping, a module system, and lifecycle callbacks.
 
 ## Installation
