@@ -8,11 +8,20 @@ final class ServiceResetException extends \RuntimeException implements KernelExc
 {
     use ThrowHelpers;
 
-    public static function fail(string $service, Throwable $exception): never
+    /**
+     * @param array<string, Throwable> $failures
+     */
+    public static function failMany(array $failures): never
     {
+        $count = count($failures);
+
         self::throw(
-            "Reset failure threshold for service [$service] exceeded",
-            $exception
+            "[$count] services reached their reset failure threshold: " . implode('; ', array_map(
+                static fn(string $id, Throwable $e) => "[$id]: {$e->getMessage()}",
+                array_keys($failures),
+                $failures
+            )),
+            array_values($failures)[0]
         );
     }
 }

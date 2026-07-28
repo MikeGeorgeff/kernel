@@ -256,6 +256,56 @@ class ServiceResetterTest extends TestCase
         $resetter->reset(1);
     }
 
+    public function test_reset_runs_every_service_to_completion_before_throwing(): void
+    {
+        $callOrder = [];
+
+        $failingA = new class($callOrder) implements ResettableInterface {
+            public function __construct(private array &$callOrder) {}
+            public function reset(): void
+            {
+                $this->callOrder[] = 'a';
+                throw new \RuntimeException('boom a');
+            }
+        };
+
+        $healthy = new class($callOrder) implements ResettableInterface {
+            public function __construct(private array &$callOrder) {}
+            public function reset(): void
+            {
+                $this->callOrder[] = 'healthy';
+            }
+        };
+
+        $failingB = new class($callOrder) implements ResettableInterface {
+            public function __construct(private array &$callOrder) {}
+            public function reset(): void
+            {
+                $this->callOrder[] = 'b';
+                throw new \RuntimeException('boom b');
+            }
+        };
+
+        $resetter = new ServiceResetter();
+        $resetter->add('service.a', $failingA);
+        $resetter->add('service.healthy', $healthy);
+        $resetter->add('service.b', $failingB);
+
+        try {
+            // Threshold of 1 means both service.a and service.b breach on
+            // their first failure. A fail-fast implementation would stop
+            // after service.a and never call reset() on service.healthy or
+            // service.b.
+            $resetter->reset(1);
+            $this->fail('Expected ServiceResetException was not thrown.');
+        } catch (ServiceResetException $e) {
+            $this->assertStringContainsString('[service.a]', $e->getMessage());
+            $this->assertStringContainsString('[service.b]', $e->getMessage());
+        }
+
+        $this->assertSame(['a', 'healthy', 'b'], $callOrder);
+    }
+
     public function test_reset_accumulates_failures_across_calls_until_the_callsite_threshold_is_reached(): void
     {
         $service = new class implements ResettableInterface {

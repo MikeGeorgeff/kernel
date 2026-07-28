@@ -608,6 +608,8 @@ final class FlakyCache implements ThresholdAwareResettableInterface
 
 Failures are tracked per container id (not per class, so the same class backing two different ids is tracked independently) and accumulate across separate calls to `resetShared()` until a successful reset clears that service's failure history.
 
+A single `resetShared()` call runs every tracked service's `reset()` to completion, regardless of earlier failures — one service breaching its threshold does not stop the rest from being attempted. Once the full pass finishes, if one or more services breached their threshold during that call, a single `ServiceResetException` is thrown aggregating every breach: its message lists each failed service id alongside its exception message, and `getPrevious()` returns the first breach's original exception.
+
 #### Scoping a reset by tag
 
 Pass one or more tags to reset only the resettable services carrying at least one of them, instead of every tracked service:

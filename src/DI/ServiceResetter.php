@@ -65,6 +65,8 @@ final class ServiceResetter implements DebuggableInterface
             ? $this->services
             : array_intersect_key($this->services, array_flip($ids));
 
+        $breaches = [];
+
         foreach ($toReset as $id => $service) {
             try {
                 $service->reset();
@@ -78,9 +80,13 @@ final class ServiceResetter implements DebuggableInterface
                 $this->logFailure($id, $e);
 
                 if ($this->shouldFail($id, $threshold)) {
-                    ServiceResetException::fail($id, $e);
+                    $breaches[$id] = $e;
                 }
             }
+        }
+
+        if ([] !== $breaches) {
+            ServiceResetException::failMany($breaches);
         }
     }
 
