@@ -4,7 +4,7 @@ namespace Georgeff\Kernel\Test\DI;
 
 use Georgeff\Kernel\DI\DefinitionInterface;
 use Georgeff\Kernel\DI\DefinitionRepository;
-use Georgeff\Kernel\KernelException;
+use Georgeff\Kernel\Exception\DefinitionException;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
 
@@ -28,15 +28,15 @@ class DefinitionRepositoryTest extends TestCase
         $this->assertNotNull($repository->get('foo'));
     }
 
-    public function test_add_overwrites_existing_definition(): void
+    public function test_add_throws_when_redefining_an_existing_id(): void
     {
         $repository = new DefinitionRepository();
         $repository->add('foo', fn() => 'first');
 
-        $factory = fn() => 'second';
-        $repository->add('foo', $factory);
+        $this->expectException(DefinitionException::class);
+        $this->expectExceptionMessage('Cannot redefine an existing definition ID: [foo]');
 
-        $this->assertSame($factory, $repository->get('foo')?->getFactory());
+        $repository->add('foo', fn() => 'second');
     }
 
     public function test_get_returns_null_for_unknown_id(): void
@@ -44,6 +44,89 @@ class DefinitionRepositoryTest extends TestCase
         $repository = new DefinitionRepository();
 
         $this->assertNull($repository->get('foo'));
+    }
+
+    // -------------------------------------------------------------------------
+    // isDefined()
+    // -------------------------------------------------------------------------
+
+    public function test_is_defined_returns_false_for_an_unknown_id(): void
+    {
+        $repository = new DefinitionRepository();
+
+        $this->assertFalse($repository->isDefined('foo'));
+    }
+
+    public function test_is_defined_returns_true_for_an_added_id(): void
+    {
+        $repository = new DefinitionRepository();
+        $repository->add('foo', fn() => 'bar');
+
+        $this->assertTrue($repository->isDefined('foo'));
+    }
+
+    public function test_is_defined_returns_false_for_an_id_that_only_has_a_pending_fallback(): void
+    {
+        $repository = new DefinitionRepository();
+        $repository->addFallback('foo', fn() => 'bar');
+
+        $this->assertFalse($repository->isDefined('foo'));
+    }
+
+    // -------------------------------------------------------------------------
+    // addFallback() / addFallbacksToDefinitions()
+    // -------------------------------------------------------------------------
+
+    public function test_add_fallback_returns_a_definition(): void
+    {
+        $repository = new DefinitionRepository();
+
+        $definition = $repository->addFallback('foo', fn() => 'bar');
+
+        $this->assertInstanceOf(DefinitionInterface::class, $definition);
+    }
+
+    public function test_add_fallback_does_not_add_to_definitions_by_itself(): void
+    {
+        $repository = new DefinitionRepository();
+        $repository->addFallback('foo', fn() => 'bar');
+
+        $this->assertNull($repository->get('foo'));
+    }
+
+    public function test_add_fallbacks_to_definitions_adds_a_fallback_for_an_undefined_id(): void
+    {
+        $repository = new DefinitionRepository();
+        $factory    = fn() => 'fallback';
+        $repository->addFallback('foo', $factory);
+
+        $repository->addFallbacksToDefinitions();
+
+        $this->assertSame($factory, $repository->get('foo')?->getFactory());
+    }
+
+    public function test_add_fallbacks_to_definitions_does_not_override_an_existing_definition(): void
+    {
+        $repository = new DefinitionRepository();
+        $factory    = fn() => 'real';
+        $repository->add('foo', $factory);
+        $repository->addFallback('foo', fn() => 'fallback');
+
+        $repository->addFallbacksToDefinitions();
+
+        $this->assertSame($factory, $repository->get('foo')?->getFactory());
+    }
+
+    public function test_add_fallback_called_twice_for_the_same_id_lets_the_last_one_win(): void
+    {
+        $repository = new DefinitionRepository();
+        $repository->addFallback('foo', fn() => 'first');
+        $factory = fn() => 'second';
+        $repository->addFallback('foo', $factory);
+
+        $repository->addFallbacksToDefinitions();
+
+        $this->assertSame($factory, $repository->get('foo')?->getFactory());
     }
 
     public function test_all_returns_empty_array_when_no_definitions(): void
@@ -66,36 +149,35 @@ class DefinitionRepositoryTest extends TestCase
         $this->assertArrayHasKey('bar', $all);
     }
 
-    public function test_get_raw_returns_empty_array_when_no_definitions(): void
+    public function test_get_instropection_data_returns_empty_array_when_no_definitions(): void
     {
         $repository = new DefinitionRepository();
 
-        $this->assertSame([], $repository->getRaw());
+        $this->assertSame([], $repository->getIntrospectionData());
     }
 
-    public function test_get_raw_returns_raw_definition_data(): void
+    public function test_get_instropection_data_returns_introspection_data(): void
     {
         $repository = new DefinitionRepository();
-        $factory    = fn() => 'bar';
 
-        $repository->add('foo', $factory)->share()->alias('baz');
+        $repository->add('foo', fn() => 'bar')->share()->alias('baz')->tag('sampled');
 
-        $raw = $repository->getRaw();
+        $data = $repository->getIntrospectionData();
 
-        $this->assertArrayHasKey('foo', $raw);
-        $this->assertSame($factory, $raw['foo']['factory']);
-        $this->assertTrue($raw['foo']['shared']);
-        $this->assertSame(['baz'], $raw['foo']['aliases']);
+        $this->assertArrayHasKey('foo', $data);
+        $this->assertTrue($data['foo']['shared']);
+        $this->assertSame(['baz'], $data['foo']['aliases']);
+        $this->assertSame(['sampled'], $data['foo']['tags']);
     }
 
-    public function test_get_raw_reflects_definition_state_at_call_time(): void
+    public function test_get_instropection_data_reflects_definition_state_at_call_time(): void
     {
         $repository = new DefinitionRepository();
         $definition = $repository->add('foo', fn() => 'bar');
 
         $definition->share()->alias('baz');
 
-        $raw = $repository->getRaw();
+        $raw = $repository->getIntrospectionData();
 
         $this->assertTrue($raw['foo']['shared']);
         $this->assertSame(['baz'], $raw['foo']['aliases']);
@@ -133,7 +215,7 @@ class DefinitionRepositoryTest extends TestCase
         $repository = new DefinitionRepository();
         $repository->decorate('foo', fn($inner, $c) => $inner);
 
-        $this->expectException(KernelException::class);
+        $this->expectException(DefinitionException::class);
         $this->expectExceptionMessage('Cannot decorate a non-existing definition ID: [foo]');
 
         $repository->applyDecorators();
@@ -315,7 +397,7 @@ class DefinitionRepositoryTest extends TestCase
         $repository = new DefinitionRepository();
         $repository->override('foo', fn() => 'overridden');
 
-        $this->expectException(KernelException::class);
+        $this->expectException(DefinitionException::class);
         $this->expectExceptionMessage('Cannot override a non-existing definition');
 
         $repository->applyOverrides();
@@ -442,5 +524,83 @@ class DefinitionRepositoryTest extends TestCase
         $repository->applyOverrides();
 
         $this->assertSame('second override', ($repository->get('foo')?->getFactory())());
+    }
+
+    // -------------------------------------------------------------------------
+    // gc()
+    // -------------------------------------------------------------------------
+
+    public function test_gc_is_a_noop_on_an_empty_repository(): void
+    {
+        $repository = new DefinitionRepository();
+        $repository->gc();
+
+        $this->assertSame([], $repository->all());
+    }
+
+    public function test_gc_clears_all_definitions(): void
+    {
+        $repository = new DefinitionRepository();
+        $repository->add('foo', fn() => 'bar');
+        $repository->gc();
+
+        $this->assertSame([], $repository->all());
+    }
+
+    public function test_gc_causes_get_to_return_null_for_a_previously_added_definition(): void
+    {
+        $repository = new DefinitionRepository();
+        $repository->add('foo', fn() => 'bar');
+        $repository->gc();
+
+        $this->assertNull($repository->get('foo'));
+    }
+
+    public function test_gc_clears_pending_decorators(): void
+    {
+        $repository = new DefinitionRepository();
+        $repository->add('foo', fn() => 'original');
+        $repository->decorate('foo', fn($inner, $c) => $inner);
+        $repository->gc();
+
+        // Definition is gone too, so this would throw if the decorator survived gc().
+        $repository->applyDecorators();
+
+        $this->assertSame([], $repository->all());
+    }
+
+    public function test_gc_clears_pending_overrides(): void
+    {
+        $repository = new DefinitionRepository();
+        $repository->add('foo', fn() => 'original');
+        $repository->override('foo', fn() => 'overridden');
+        $repository->gc();
+
+        // Definition is gone too, so this would throw if the override survived gc().
+        $repository->applyOverrides();
+
+        $this->assertSame([], $repository->all());
+    }
+
+    public function test_gc_clears_pending_fallbacks(): void
+    {
+        $repository = new DefinitionRepository();
+        $repository->addFallback('foo', fn() => 'fallback');
+        $repository->gc();
+
+        $repository->addFallbacksToDefinitions();
+
+        $this->assertSame([], $repository->all());
+    }
+
+    public function test_repository_is_reusable_after_gc(): void
+    {
+        $repository = new DefinitionRepository();
+        $repository->add('foo', fn() => 'original');
+        $repository->gc();
+
+        $repository->add('bar', fn() => 'baz');
+
+        $this->assertSame(['bar' => $repository->get('bar')], $repository->all());
     }
 }

@@ -3,180 +3,184 @@
 namespace Georgeff\Kernel;
 
 use Psr\Container\ContainerInterface;
-use Georgeff\Kernel\Module\ModuleInterface;
 use Georgeff\Kernel\DI\DefinitionInterface;
-use Georgeff\Kernel\Module\ModuleRepositoryInterface;
+use Georgeff\Kernel\Contract\ModuleInterface;
+use Georgeff\Kernel\Contract\DebuggableInterface;
+use Georgeff\Kernel\Contract\EnvironmentInterface;
+use Georgeff\Kernel\Exception\KernelExceptionInterface;
 
-interface KernelInterface
+/**
+ * Central point of contact for the application: register modules, definitions, and lifecycle hooks.
+ */
+interface KernelInterface extends DebuggableInterface
 {
     /**
      * Boot the kernel
      *
-     * @return void
+     * @throws KernelExceptionInterface
      */
     public function boot(): void;
 
     /**
-     * Shutdown the kernel
+     * Shut down the kernel
      *
-     * @return void
+     * @throws KernelExceptionInterface
      */
     public function shutdown(): void;
 
     /**
-     * Indicates if the kernel is booting
-     *
-     * @return bool
+     * Whether the kernel is currently booting
      */
     public function isBooting(): bool;
 
     /**
-     * Indicates if the kernel has been booted
-     *
-     * @return bool
+     * Whether the kernel has finished booting
      */
     public function isBooted(): bool;
 
     /**
-     * Indicates if the kernel has been shutdown
-     *
-     * @return bool
+     * Whether the kernel has been shut down
      */
     public function isShutdown(): bool;
 
     /**
-     * Get the kernel environment
-     *
-     * @return string
+     * The environment the kernel was constructed with
      */
-    public function getEnvironment(): string;
+    public function getEnvironment(): EnvironmentInterface;
 
     /**
-     * Indicates if debug is enabled
-     *
-     * @return bool
+     * Whether debug mode is enabled
      */
     public function isDebug(): bool;
 
     /**
-     * Register a pre-boot callback
+     * Register a callback to run before boot begins
      *
      * @param callable(KernelInterface): void $callback
      *
-     * @return static
+     * @throws KernelExceptionInterface
      */
     public function onBooting(callable $callback): static;
 
     /**
-     * Register a post-boot callback
+     * Register a callback to run after boot completes
      *
      * @param callable(KernelInterface): void $callback
      *
-     * @return static
+     * @throws KernelExceptionInterface
      */
     public function onBooted(callable $callback): static;
 
     /**
-     * Register a pre-shutdown callback
+     * Register a callback to run before shutdown begins
      *
      * @param callable(KernelInterface): void $callback
      *
-     * @return static
+     * @throws KernelExceptionInterface
      */
     public function onShutdown(callable $callback): static;
 
     /**
-     * Register a post shutdown callback
+     * Register a callback to run after shutdown completes
      *
      * @param callable(KernelInterface): void $callback
      *
-     * @return static
+     * @throws KernelExceptionInterface
      */
     public function afterShutdown(callable $callback): static;
 
     /**
-     * Add a container definition
+     * Register a callback invoked before a service is resolved from the container
      *
-     * @param string                               $id
-     * @param callable(ContainerInterface): mixed  $factory
-     * @param bool                                 $shared
-     * @param string[]                             $aliases
-     * @param string[]                             $tags
+     * @param callable(string): void $callback
      *
-     * @return static
+     * @throws KernelExceptionInterface
      */
-    public function addDefinition(string $id, callable $factory, bool $shared = false, array $aliases = [], array $tags = []): static;
+    public function onResolving(callable $callback): static;
 
     /**
-     * Add a container definition using the fluent builder
+     * Register a callback invoked after a service is resolved from the container
      *
-     * @param string                              $id
+     * @param callable(string, mixed): void $callback
+     *
+     * @throws KernelExceptionInterface
+     */
+    public function onResolved(callable $callback): static;
+
+    /**
+     * Opt in to releasing internal bookkeeping state once boot completes, for long-running processes that don't need it afterward
+     *
+     * @throws KernelExceptionInterface
+     */
+    public function enableGc(): static;
+
+    /**
+     * Register a new container definition
+     *
      * @param callable(ContainerInterface): mixed $factory
      *
-     * @return DefinitionInterface
+     * @throws KernelExceptionInterface
      */
     public function define(string $id, callable $factory): DefinitionInterface;
 
     /**
-     * Tag a container definition
+     * Register a definition that is only used if nothing else defines the same id by the time the kernel boots
      *
-     * @param string   $id
-     * @param string[] $tags
+     * @param callable(ContainerInterface): mixed $factory
      *
-     * @return static
+     * @throws KernelExceptionInterface
      */
-    public function tag(string $id, array $tags): static;
+    public function defineFallback(string $id, callable $factory): DefinitionInterface;
 
     /**
-     * Decorate a container definition
+     * Wrap an existing definition's factory. The original's shared flag, aliases, and tags are preserved
      *
-     * @param string                                     $id
      * @param callable(mixed, ContainerInterface): mixed $decorator
      *
-     * @return static
+     * @throws KernelExceptionInterface
      */
     public function decorate(string $id, callable $decorator): static;
 
     /**
-     * Override an existing service definition
+     * Replace an existing definition's factory outright. Pass $preserve to also keep the original's shared flag, aliases, and tags
      *
-     * @param string                              $id
      * @param callable(ContainerInterface): mixed $factory
      *
-     * @return DefinitionInterface
+     * @throws KernelExceptionInterface
      */
     public function override(string $id, callable $factory, bool $preserve = false): DefinitionInterface;
 
     /**
+     * Reset every shared, resettable service back to its original state, or only those tagged
+     * with the given tags if any are provided. Stops after $failureThreshold consecutive failures
+     *
+     * @throws KernelExceptionInterface
+     */
+    public function resetShared(int $failureThreshold = 3, string ...$tags): static;
+
+    /**
      * Add a module to the kernel
      *
-     * @param \Georgeff\Kernel\Module\ModuleInterface $module
-     *
-     * @return static
+     * @throws KernelExceptionInterface
      */
     public function addModule(ModuleInterface $module): static;
 
     /**
-     * Add a module repository to the kernel
+     * The class of every module that has been added to the kernel
      *
-     * @param \Georgeff\Kernel\Module\ModuleRepositoryInterface $repository
-     *
-     * @return static
+     * @return list<class-string<ModuleInterface>>
      */
-    public function addRepository(ModuleRepositoryInterface $repository): static;
+    public function getModules(): array;
 
     /**
-     * Get the container
+     * The built container
      *
-     * @return \Psr\Container\ContainerInterface
+     * @throws KernelExceptionInterface
      */
     public function getContainer(): ContainerInterface;
 
     /**
-     * Get the kernel start time (only available in debug mode)
-     *
-     * @return float
+     * The kernel's boot start time, available only in debug mode
      */
-    public function getStartTime(): float;
-
+    public function getStartTime(): ?float;
 }

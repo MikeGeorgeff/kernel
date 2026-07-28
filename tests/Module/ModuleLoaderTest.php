@@ -2,15 +2,20 @@
 
 namespace Georgeff\Kernel\Test\Module;
 
-use Georgeff\Kernel\Environment;
-use Georgeff\Kernel\KernelException;
+use Georgeff\Kernel\Contract\AggregateModuleInterface;
+use Georgeff\Kernel\Contract\BootableModuleInterface;
+use Georgeff\Kernel\Contract\ConfigurableModuleInterface;
+use Georgeff\Kernel\Contract\EnvironmentInterface;
+use Georgeff\Kernel\Contract\ModuleInterface;
+use Georgeff\Kernel\Environment\Production;
+use Georgeff\Kernel\Environment\Staging;
+use Georgeff\Kernel\Environment\Testing;
+use Georgeff\Kernel\Exception\KernelException;
+use Georgeff\Kernel\Exception\ModuleException;
 use Georgeff\Kernel\KernelInterface;
-use Georgeff\Kernel\Module\BootableModuleInterface;
-use Georgeff\Kernel\Module\ConfigurableModuleInterface;
-use Georgeff\Kernel\Module\ModuleInterface;
 use Georgeff\Kernel\Module\ModuleLoader;
-use Georgeff\Kernel\Module\ModuleRepositoryInterface;
 use PHPUnit\Framework\TestCase;
+use Psr\Container\ContainerExceptionInterface;
 use Psr\Container\ContainerInterface;
 
 class ModuleLoaderTest extends TestCase
@@ -31,7 +36,7 @@ class ModuleLoaderTest extends TestCase
         };
 
         $loader->add($module);
-        $loader->load(Environment::Testing);
+        $loader->load(new Testing());
         $loader->register($kernel);
 
         $this->assertTrue($registered);
@@ -45,8 +50,8 @@ class ModuleLoaderTest extends TestCase
 
         $loader->add($module);
 
-        $this->expectException(KernelException::class);
-        $this->expectExceptionMessage(sprintf('Module "%s" has already been added', $module::class));
+        $this->expectException(ModuleException::class);
+        $this->expectExceptionMessage(sprintf('Module [%s] has already been added', $module::class));
 
         $loader->add(clone $module);
     }
@@ -56,19 +61,19 @@ class ModuleLoaderTest extends TestCase
         $loader = new ModuleLoader();
         $module = $this->createStub(ModuleInterface::class);
 
-        $loader->load(Environment::Testing);
+        $loader->load(new Testing());
 
-        $this->expectException(\LogicException::class);
+        $this->expectException(ModuleException::class);
         $this->expectExceptionMessage('Cannot add modules after modules have been loaded');
 
         $loader->add($module);
     }
 
     // -------------------------------------------------------------------------
-    // addRepository()
+    // Aggregate modules
     // -------------------------------------------------------------------------
 
-    public function test_add_repository_flattens_modules_on_load(): void
+    public function test_aggregate_module_expands_its_modules_on_load(): void
     {
         $loader = new ModuleLoader();
         $kernel = $this->createStub(KernelInterface::class);
@@ -79,106 +84,158 @@ class ModuleLoaderTest extends TestCase
             public function register(KernelInterface $kernel): void { $this->registered = true; }
         };
 
-        $repo = new class($module) implements ModuleRepositoryInterface {
+        $aggregate = new class($module) implements AggregateModuleInterface {
             public function __construct(private ModuleInterface $module) {}
-            public function modules(Environment $env): array { return [$this->module]; }
+            public function register(KernelInterface $kernel): void {}
+            public function modules(EnvironmentInterface $env): array { return [$this->module]; }
         };
 
-        $loader->addRepository($repo);
-        $loader->load(Environment::Testing);
+        $loader->add($aggregate);
+        $loader->load(new Testing());
         $loader->register($kernel);
 
         $this->assertTrue($registered);
     }
 
-    public function test_add_repository_passes_environment_to_modules(): void
+    public function test_aggregate_module_itself_is_registered(): void
+    {
+        $loader = new ModuleLoader();
+        $kernel = $this->createStub(KernelInterface::class);
+
+        $registered = false;
+        $aggregate = new class($registered) implements AggregateModuleInterface {
+            public function __construct(private bool &$registered) {}
+            public function register(KernelInterface $kernel): void { $this->registered = true; }
+            public function modules(EnvironmentInterface $env): array { return []; }
+        };
+
+        $loader->add($aggregate);
+        $loader->load(new Testing());
+        $loader->register($kernel);
+
+        $this->assertTrue($registered);
+    }
+
+    public function test_aggregate_module_passes_environment_to_modules(): void
     {
         $loader = new ModuleLoader();
         $capturedEnv = null;
+        $environment = new Staging();
 
-        $repo = new class($capturedEnv) implements ModuleRepositoryInterface {
+        $aggregate = new class($capturedEnv) implements AggregateModuleInterface {
             public function __construct(private mixed &$capturedEnv) {}
-            public function modules(Environment $env): array
+            public function register(KernelInterface $kernel): void {}
+            public function modules(EnvironmentInterface $env): array
             {
                 $this->capturedEnv = $env;
                 return [];
             }
         };
 
-        $loader->addRepository($repo);
-        $loader->load(Environment::Staging);
+        $loader->add($aggregate);
+        $loader->load($environment);
 
-        $this->assertSame(Environment::Staging, $capturedEnv);
+        $this->assertSame($environment, $capturedEnv);
     }
 
-    public function test_add_repository_throws_on_duplicate_repository_class(): void
+    public function test_nested_aggregate_modules_are_expanded(): void
     {
         $loader = new ModuleLoader();
+        $kernel = $this->createStub(KernelInterface::class);
 
-        $repo = $this->createStub(ModuleRepositoryInterface::class);
+        $registered = false;
+        $leaf = new class($registered) implements ModuleInterface {
+            public function __construct(private bool &$registered) {}
+            public function register(KernelInterface $kernel): void { $this->registered = true; }
+        };
 
-        $loader->addRepository($repo);
+        $inner = new class($leaf) implements AggregateModuleInterface {
+            public function __construct(private ModuleInterface $leaf) {}
+            public function register(KernelInterface $kernel): void {}
+            public function modules(EnvironmentInterface $env): array { return [$this->leaf]; }
+        };
 
-        $this->expectException(KernelException::class);
-        $this->expectExceptionMessage(sprintf('Module repository "%s" has already been added', $repo::class));
+        $outer = new class($inner) implements AggregateModuleInterface {
+            public function __construct(private ModuleInterface $inner) {}
+            public function register(KernelInterface $kernel): void {}
+            public function modules(EnvironmentInterface $env): array { return [$this->inner]; }
+        };
 
-        $loader->addRepository(clone $repo);
+        $loader->add($outer);
+        $loader->load(new Testing());
+        $loader->register($kernel);
+
+        $this->assertTrue($registered);
     }
 
-    public function test_repository_throws_if_module_already_directly_added(): void
+    public function test_aggregate_throws_if_returned_module_already_directly_added(): void
     {
         $loader = new ModuleLoader();
         $module = $this->createStub(ModuleInterface::class);
 
-        $repo = new class($module) implements ModuleRepositoryInterface {
+        $aggregate = new class($module) implements AggregateModuleInterface {
             public function __construct(private ModuleInterface $module) {}
-            public function modules(Environment $env): array { return [$this->module]; }
+            public function register(KernelInterface $kernel): void {}
+            public function modules(EnvironmentInterface $env): array { return [$this->module]; }
         };
 
         $loader->add($module);
-        $loader->addRepository($repo);
+        $loader->add($aggregate);
 
-        $this->expectException(KernelException::class);
-        $this->expectExceptionMessage(sprintf('Module "%s" has already been added', $module::class));
+        $this->expectException(ModuleException::class);
+        $this->expectExceptionMessage(sprintf('Module [%s] has already been added', $module::class));
 
-        $loader->load(Environment::Testing);
+        $loader->load(new Testing());
     }
 
-    public function test_repository_throws_if_two_repos_return_same_module_class(): void
+    public function test_aggregate_cycle_throws_on_the_repeated_module(): void
     {
         $loader = new ModuleLoader();
-        $module = $this->createStub(ModuleInterface::class);
 
-        $repoA = new class($module) implements ModuleRepositoryInterface {
-            public function __construct(private ModuleInterface $module) {}
-            public function modules(Environment $env): array { return [$this->module]; }
+        // $a and $b return each other, forming a cycle; add()'s duplicate-class
+        // guard is what stops expansion from recursing forever.
+        $a = new class implements AggregateModuleInterface {
+            public ?AggregateModuleInterface $other = null;
+            public function register(KernelInterface $kernel): void {}
+            public function modules(EnvironmentInterface $env): array { return [$this->other]; }
         };
 
-        $repoB = new class($module) implements ModuleRepositoryInterface {
-            public function __construct(private ModuleInterface $module) {}
-            public function modules(Environment $env): array { return [clone $this->module]; }
+        $b = new class($a) implements AggregateModuleInterface {
+            public function __construct(private AggregateModuleInterface $other) {}
+            public function register(KernelInterface $kernel): void {}
+            public function modules(EnvironmentInterface $env): array { return [$this->other]; }
         };
 
-        $loader->addRepository($repoA);
-        $loader->addRepository($repoB);
+        $a->other = $b;
 
-        $this->expectException(KernelException::class);
-        $this->expectExceptionMessage(sprintf('Module "%s" has already been added', $module::class));
+        $loader->add($a);
 
-        $loader->load(Environment::Testing);
+        $this->expectException(ModuleException::class);
+        $this->expectExceptionMessage(sprintf('Module [%s] has already been added', $a::class));
+
+        $loader->load(new Testing());
     }
 
-    public function test_add_repository_throws_after_load(): void
+    public function test_aggregate_modules_contribute_config(): void
     {
         $loader = new ModuleLoader();
-        $repo = $this->createStub(ModuleRepositoryInterface::class);
 
-        $loader->load(Environment::Testing);
+        $configurable = new class implements ConfigurableModuleInterface {
+            public function register(KernelInterface $kernel): void {}
+            public function config(EnvironmentInterface $env): array { return ['db.host' => 'localhost']; }
+        };
 
-        $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage('Cannot add module repositories after modules have been loaded');
+        $aggregate = new class($configurable) implements AggregateModuleInterface {
+            public function __construct(private ModuleInterface $module) {}
+            public function register(KernelInterface $kernel): void {}
+            public function modules(EnvironmentInterface $env): array { return [$this->module]; }
+        };
 
-        $loader->addRepository($repo);
+        $loader->add($aggregate);
+
+        $config = $loader->load(new Testing());
+
+        $this->assertSame(['db.host' => 'localhost'], $config);
     }
 
     // -------------------------------------------------------------------------
@@ -190,7 +247,7 @@ class ModuleLoaderTest extends TestCase
         $loader = new ModuleLoader();
         $loader->add($this->createStub(ModuleInterface::class));
 
-        $config = $loader->load(Environment::Testing);
+        $config = $loader->load(new Testing());
 
         $this->assertSame([], $config);
     }
@@ -201,18 +258,18 @@ class ModuleLoaderTest extends TestCase
 
         $moduleA = new class implements ConfigurableModuleInterface {
             public function register(KernelInterface $kernel): void {}
-            public function config(Environment $env): array { return ['db.host' => 'localhost', 'db.port' => 3306]; }
+            public function config(EnvironmentInterface $env): array { return ['db.host' => 'localhost', 'db.port' => 3306]; }
         };
 
         $moduleB = new class implements ConfigurableModuleInterface {
             public function register(KernelInterface $kernel): void {}
-            public function config(Environment $env): array { return ['cache.driver' => 'redis']; }
+            public function config(EnvironmentInterface $env): array { return ['cache.driver' => 'redis']; }
         };
 
         $loader->add($moduleA);
         $loader->add($moduleB);
 
-        $config = $loader->load(Environment::Testing);
+        $config = $loader->load(new Testing());
 
         $this->assertSame([
             'db.host'      => 'localhost',
@@ -227,18 +284,18 @@ class ModuleLoaderTest extends TestCase
 
         $moduleA = new class implements ConfigurableModuleInterface {
             public function register(KernelInterface $kernel): void {}
-            public function config(Environment $env): array { return ['db.host' => 'localhost']; }
+            public function config(EnvironmentInterface $env): array { return ['db.host' => 'localhost']; }
         };
 
         $moduleB = new class implements ConfigurableModuleInterface {
             public function register(KernelInterface $kernel): void {}
-            public function config(Environment $env): array { return ['db.host' => 'production.host']; }
+            public function config(EnvironmentInterface $env): array { return ['db.host' => 'production.host']; }
         };
 
         $loader->add($moduleA);
         $loader->add($moduleB);
 
-        $config = $loader->load(Environment::Testing);
+        $config = $loader->load(new Testing());
 
         $this->assertSame('production.host', $config['db.host']);
     }
@@ -247,11 +304,12 @@ class ModuleLoaderTest extends TestCase
     {
         $loader = new ModuleLoader();
         $capturedEnv = null;
+        $environment = new Production();
 
         $module = new class($capturedEnv) implements ConfigurableModuleInterface {
             public function __construct(private mixed &$capturedEnv) {}
             public function register(KernelInterface $kernel): void {}
-            public function config(Environment $env): array
+            public function config(EnvironmentInterface $env): array
             {
                 $this->capturedEnv = $env;
                 return [];
@@ -259,9 +317,9 @@ class ModuleLoaderTest extends TestCase
         };
 
         $loader->add($module);
-        $loader->load(Environment::Production);
+        $loader->load($environment);
 
-        $this->assertSame(Environment::Production, $capturedEnv);
+        $this->assertSame($environment, $capturedEnv);
     }
 
     public function test_load_is_idempotent(): void
@@ -272,7 +330,7 @@ class ModuleLoaderTest extends TestCase
         $module = new class($callCount) implements ConfigurableModuleInterface {
             public function __construct(private int &$callCount) {}
             public function register(KernelInterface $kernel): void {}
-            public function config(Environment $env): array
+            public function config(EnvironmentInterface $env): array
             {
                 $this->callCount++;
                 return ['key' => 'value'];
@@ -281,8 +339,8 @@ class ModuleLoaderTest extends TestCase
 
         $loader->add($module);
 
-        $first  = $loader->load(Environment::Testing);
-        $second = $loader->load(Environment::Testing);
+        $first  = $loader->load(new Testing());
+        $second = $loader->load(new Testing());
 
         $this->assertSame($first, $second);
         $this->assertSame(1, $callCount);
@@ -312,7 +370,7 @@ class ModuleLoaderTest extends TestCase
 
         $loader->add($moduleA);
         $loader->add($moduleB);
-        $loader->load(Environment::Testing);
+        $loader->load(new Testing());
         $loader->register($kernel);
 
         $this->assertSame(2, $callCount);
@@ -331,7 +389,7 @@ class ModuleLoaderTest extends TestCase
         };
 
         $loader->add($module);
-        $loader->load(Environment::Testing);
+        $loader->load(new Testing());
         $loader->register($kernel);
         $loader->register($kernel);
 
@@ -343,10 +401,123 @@ class ModuleLoaderTest extends TestCase
         $loader = new ModuleLoader();
         $kernel = $this->createStub(KernelInterface::class);
 
-        $this->expectException(\LogicException::class);
+        $this->expectException(ModuleException::class);
         $this->expectExceptionMessage('Modules need to be loaded before they can be registered');
 
         $loader->register($kernel);
+    }
+
+    public function test_register_rethrows_kernel_exception_unchanged(): void
+    {
+        $loader = new ModuleLoader();
+        $kernel = $this->createStub(KernelInterface::class);
+
+        $module = new class implements ModuleInterface {
+            public function register(KernelInterface $kernel): void
+            {
+                throw new KernelException('boom');
+            }
+        };
+
+        $loader->add($module);
+        $loader->load(new Testing());
+
+        $this->expectException(KernelException::class);
+        $this->expectExceptionMessage('boom');
+
+        $loader->register($kernel);
+    }
+
+    public function test_register_rethrows_module_exception_unchanged(): void
+    {
+        $loader = new ModuleLoader();
+        $kernel = $this->createStub(KernelInterface::class);
+
+        $module = new class implements ModuleInterface {
+            public function register(KernelInterface $kernel): void
+            {
+                throw new ModuleException('boom');
+            }
+        };
+
+        $loader->add($module);
+        $loader->load(new Testing());
+
+        $this->expectException(ModuleException::class);
+        $this->expectExceptionMessage('boom');
+
+        $loader->register($kernel);
+    }
+
+    public function test_register_rethrows_container_exception_unchanged(): void
+    {
+        $loader = new ModuleLoader();
+        $kernel = $this->createStub(KernelInterface::class);
+
+        $containerException = new class('boom') extends \Exception implements ContainerExceptionInterface {};
+
+        $module = new class($containerException) implements ModuleInterface {
+            public function __construct(private \Throwable $exception) {}
+            public function register(KernelInterface $kernel): void
+            {
+                throw $this->exception;
+            }
+        };
+
+        $loader->add($module);
+        $loader->load(new Testing());
+
+        $this->expectException(ContainerExceptionInterface::class);
+        $this->expectExceptionMessage('boom');
+
+        $loader->register($kernel);
+    }
+
+    public function test_register_wraps_unexpected_throwable_in_module_exception(): void
+    {
+        $loader = new ModuleLoader();
+        $kernel = $this->createStub(KernelInterface::class);
+
+        $module = new class implements ModuleInterface {
+            public function register(KernelInterface $kernel): void
+            {
+                throw new \RuntimeException('boom');
+            }
+        };
+
+        $loader->add($module);
+        $loader->load(new Testing());
+
+        $this->expectException(ModuleException::class);
+        $this->expectExceptionMessage(sprintf('Failed to register module [%s]: boom', $module::class));
+
+        $loader->register($kernel);
+    }
+
+    public function test_register_wrapped_exception_preserves_the_original_as_previous(): void
+    {
+        $loader = new ModuleLoader();
+        $kernel = $this->createStub(KernelInterface::class);
+
+        $original = new \RuntimeException('boom');
+
+        $module = new class($original) implements ModuleInterface {
+            public function __construct(private \Throwable $exception) {}
+            public function register(KernelInterface $kernel): void
+            {
+                throw $this->exception;
+            }
+        };
+
+        $loader->add($module);
+        $loader->load(new Testing());
+
+        try {
+            $loader->register($kernel);
+            $this->fail('Expected ModuleException was not thrown');
+        } catch (ModuleException $e) {
+            $this->assertSame($original, $e->getPrevious());
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -367,7 +538,7 @@ class ModuleLoaderTest extends TestCase
         };
 
         $loader->add($module);
-        $loader->load(Environment::Testing);
+        $loader->load(new Testing());
         $loader->register($kernel);
         $loader->boot($container);
 
@@ -384,7 +555,7 @@ class ModuleLoaderTest extends TestCase
         $module->expects($this->once())->method('register');
 
         $loader->add($module);
-        $loader->load(Environment::Testing);
+        $loader->load(new Testing());
         $loader->register($kernel);
         $loader->boot($container);
     }
@@ -403,7 +574,7 @@ class ModuleLoaderTest extends TestCase
         };
 
         $loader->add($module);
-        $loader->load(Environment::Testing);
+        $loader->load(new Testing());
         $loader->register($kernel);
         $loader->boot($container);
 
@@ -424,7 +595,7 @@ class ModuleLoaderTest extends TestCase
         };
 
         $loader->add($module);
-        $loader->load(Environment::Testing);
+        $loader->load(new Testing());
         $loader->register($kernel);
         $loader->boot($container);
         $loader->boot($container);
@@ -437,12 +608,197 @@ class ModuleLoaderTest extends TestCase
         $loader = new ModuleLoader();
         $container = $this->createStub(ContainerInterface::class);
 
-        $loader->load(Environment::Testing);
+        $loader->load(new Testing());
 
-        $this->expectException(\LogicException::class);
+        $this->expectException(ModuleException::class);
         $this->expectExceptionMessage('Modules need to be registered before they can be booted');
 
         $loader->boot($container);
+    }
+
+    public function test_boot_rethrows_kernel_exception_unchanged(): void
+    {
+        $loader = new ModuleLoader();
+        $kernel = $this->createStub(KernelInterface::class);
+        $container = $this->createStub(ContainerInterface::class);
+
+        $module = new class implements BootableModuleInterface {
+            public function register(KernelInterface $kernel): void {}
+            public function boot(ContainerInterface $container): void
+            {
+                throw new KernelException('boom');
+            }
+        };
+
+        $loader->add($module);
+        $loader->load(new Testing());
+        $loader->register($kernel);
+
+        $this->expectException(KernelException::class);
+        $this->expectExceptionMessage('boom');
+
+        $loader->boot($container);
+    }
+
+    public function test_boot_rethrows_module_exception_unchanged(): void
+    {
+        $loader = new ModuleLoader();
+        $kernel = $this->createStub(KernelInterface::class);
+        $container = $this->createStub(ContainerInterface::class);
+
+        $module = new class implements BootableModuleInterface {
+            public function register(KernelInterface $kernel): void {}
+            public function boot(ContainerInterface $container): void
+            {
+                throw new ModuleException('boom');
+            }
+        };
+
+        $loader->add($module);
+        $loader->load(new Testing());
+        $loader->register($kernel);
+
+        $this->expectException(ModuleException::class);
+        $this->expectExceptionMessage('boom');
+
+        $loader->boot($container);
+    }
+
+    public function test_boot_rethrows_container_exception_unchanged(): void
+    {
+        $loader = new ModuleLoader();
+        $kernel = $this->createStub(KernelInterface::class);
+        $container = $this->createStub(ContainerInterface::class);
+
+        $containerException = new class('boom') extends \Exception implements ContainerExceptionInterface {};
+
+        $module = new class($containerException) implements BootableModuleInterface {
+            public function __construct(private \Throwable $exception) {}
+            public function register(KernelInterface $kernel): void {}
+            public function boot(ContainerInterface $container): void
+            {
+                throw $this->exception;
+            }
+        };
+
+        $loader->add($module);
+        $loader->load(new Testing());
+        $loader->register($kernel);
+
+        $this->expectException(ContainerExceptionInterface::class);
+        $this->expectExceptionMessage('boom');
+
+        $loader->boot($container);
+    }
+
+    public function test_boot_wraps_unexpected_throwable_in_module_exception(): void
+    {
+        $loader = new ModuleLoader();
+        $kernel = $this->createStub(KernelInterface::class);
+        $container = $this->createStub(ContainerInterface::class);
+
+        $module = new class implements BootableModuleInterface {
+            public function register(KernelInterface $kernel): void {}
+            public function boot(ContainerInterface $container): void
+            {
+                throw new \RuntimeException('boom');
+            }
+        };
+
+        $loader->add($module);
+        $loader->load(new Testing());
+        $loader->register($kernel);
+
+        $this->expectException(ModuleException::class);
+        $this->expectExceptionMessage(sprintf('Failed to boot module [%s]: boom', $module::class));
+
+        $loader->boot($container);
+    }
+
+    public function test_boot_wrapped_exception_preserves_the_original_as_previous(): void
+    {
+        $loader = new ModuleLoader();
+        $kernel = $this->createStub(KernelInterface::class);
+        $container = $this->createStub(ContainerInterface::class);
+
+        $original = new \RuntimeException('boom');
+
+        $module = new class($original) implements BootableModuleInterface {
+            public function __construct(private \Throwable $exception) {}
+            public function register(KernelInterface $kernel): void {}
+            public function boot(ContainerInterface $container): void
+            {
+                throw $this->exception;
+            }
+        };
+
+        $loader->add($module);
+        $loader->load(new Testing());
+        $loader->register($kernel);
+
+        try {
+            $loader->boot($container);
+            $this->fail('Expected ModuleException was not thrown');
+        } catch (ModuleException $e) {
+            $this->assertSame($original, $e->getPrevious());
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // getModules()
+    // -------------------------------------------------------------------------
+
+    public function test_get_modules_returns_an_empty_list_initially(): void
+    {
+        $loader = new ModuleLoader();
+
+        $this->assertSame([], $loader->getModules());
+    }
+
+    public function test_get_modules_reflects_a_module_immediately_after_add_before_load(): void
+    {
+        $loader = new ModuleLoader();
+        $module = $this->createStub(ModuleInterface::class);
+
+        $loader->add($module);
+
+        $this->assertSame([$module::class], $loader->getModules());
+    }
+
+    public function test_get_modules_includes_aggregate_expanded_modules_after_load(): void
+    {
+        $loader = new ModuleLoader();
+
+        $module = $this->createStub(ModuleInterface::class);
+
+        $aggregate = new class($module) implements AggregateModuleInterface {
+            public function __construct(private ModuleInterface $module) {}
+            public function register(KernelInterface $kernel): void {}
+            public function modules(EnvironmentInterface $env): array { return [$this->module]; }
+        };
+
+        $loader->add($aggregate);
+
+        $this->assertSame([$aggregate::class], $loader->getModules(), 'Aggregate children should not be expanded before load()');
+
+        $loader->load(new Testing());
+
+        $this->assertSame([$aggregate::class, $module::class], $loader->getModules());
+    }
+
+    public function test_get_modules_does_not_include_a_module_rejected_by_the_duplicate_guard(): void
+    {
+        $loader = new ModuleLoader();
+        $module = $this->createStub(ModuleInterface::class);
+
+        $loader->add($module);
+
+        try {
+            $loader->add(clone $module);
+        } catch (ModuleException) {
+        }
+
+        $this->assertSame([$module::class], $loader->getModules());
     }
 
     // -------------------------------------------------------------------------
@@ -470,7 +826,7 @@ class ModuleLoaderTest extends TestCase
         $module = $this->createStub(ModuleInterface::class);
         $loader->add($module);
 
-        $loader->load(Environment::Testing);
+        $loader->load(new Testing());
         $info = $loader->getDebugInfo();
         $this->assertTrue($info['loaded']);
         $this->assertFalse($info['registered']);

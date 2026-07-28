@@ -10,4 +10,11 @@ interface TagRegistryInterface
      * @return mixed[]
      */
     public function getTagged(string $tag): array;
+
+    /**
+     * Retrieve all service IDs for a tag
+     *
+     * @return string[]
+     */
+    public function getTaggedIds(string $tag): array;
 }
