@@ -412,6 +412,39 @@ class ServiceResetterTest extends TestCase
         $this->addToAssertionCount(1);
     }
 
+    public function test_reset_only_includes_services_that_actually_breach_their_threshold(): void
+    {
+        $breaching = new class implements ResettableInterface {
+            public function reset(): void { throw new \RuntimeException('breaching failure'); }
+        };
+
+        $tolerated = new class implements ThresholdAwareResettableInterface {
+            public function reset(): void { throw new \RuntimeException('tolerated failure'); }
+            public function getFailureThreshold(): int { return 5; }
+        };
+
+        $resetter = new ServiceResetter();
+        $resetter->add('service.breaching', $breaching);
+        $resetter->add('service.tolerated', $tolerated);
+
+        try {
+            // Callsite threshold of 1 breaches service.breaching immediately;
+            // service.tolerated's own threshold of 5 tolerates this single
+            // failure, so it should be logged but not included in the
+            // exception thrown for this call.
+            $resetter->reset(1);
+            $this->fail('Expected ServiceResetException was not thrown.');
+        } catch (ServiceResetException $e) {
+            $this->assertStringContainsString('[service.breaching]', $e->getMessage());
+            $this->assertStringNotContainsString('[service.tolerated]', $e->getMessage());
+        }
+
+        $this->assertSame(
+            ['service.breaching' => 1, 'service.tolerated' => 1],
+            $resetter->getDebugInfo()['failures']
+        );
+    }
+
     // -------------------------------------------------------------------------
     // failure tracking key — id, not class
     // -------------------------------------------------------------------------
