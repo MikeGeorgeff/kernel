@@ -19,7 +19,8 @@
     "phpunit/phpunit": "^11.0",
     "phpstan/phpstan": "^2.0",
     "squizlabs/php_codesniffer": "^3.11",
-    "bnf/phpstan-psr-container": "^1.0"
+    "bnf/phpstan-psr-container": "^1.0",
+    "php-coveralls/php-coveralls": "^2.9"
   },
   "autoload": {
     "psr-4": {
@@ -43,6 +44,9 @@
     ],
     "phpcs": [
       "vendor/bin/phpcs"
+    ],
+    "coverage": [
+      "vendor/bin/phpunit --coverage-clover=coverage/clover.xml"
     ]
   }
 }
