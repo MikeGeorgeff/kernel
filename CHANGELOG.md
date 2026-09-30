@@ -4,9 +4,9 @@ All notable changes to `georgeff/kernel` are documented here.
 
 ---
 
-## [2.0.0] — Unreleased
+## [2.0.0] — 2026-07-28
 
-2.0 is a major release with several breaking changes. This entry will be finalized when 2.0.0 actually ships; it currently reflects everything merged to the `2.x` branch so far.
+2.0 is a major release with several breaking changes.
 
 ### Added
 - `Contract\EnvironmentInterface` (`getValue(): string`, `is(string ...$values): bool`) — replaces the `Environment` enum; consumers can now define their own environments (e.g. a canary/blue-green tier) instead of being limited to fixed enum cases
