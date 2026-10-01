@@ -4,6 +4,13 @@ All notable changes to `georgeff/kernel` are documented here.
 
 ---
 
+## [2.1.0] — 2026-10-01
+
+### Changed
+- Aggregate module expansion now skips a returned module whose class has already been added, instead of throwing `ModuleException`. This lets several packages aggregate the same dependency module, and lets an application add a module directly that a package's aggregate also returns. A module added directly with `addModule()` always takes precedence over an aggregate-returned instance of the same class, since aggregates are expanded after all direct additions; between aggregates, the first instance returned is kept. A skipped module isn't recursed into, so aggregates that return each other still terminate. Adding the same module class directly twice still throws `ModuleException`
+
+---
+
 ## [2.0.0] — 2026-07-28
 
 2.0 is a major release with several breaking changes.

@@ -168,6 +168,10 @@ final class ModuleLoader implements DebuggableInterface
     private function expandAggregate(AggregateModuleInterface $aggregate, EnvironmentInterface $env): void
     {
         foreach ($aggregate->modules($env) as $module) {
+            if (isset($this->modules[$module::class])) {
+                continue;
+            }
+
             $this->add($module);
 
             if ($module instanceof AggregateModuleInterface) {

@@ -439,7 +439,15 @@ $kernel->addModule(new DatabaseModule());
 // MigrationModule (and DatabaseDebugModule outside production) are loaded automatically.
 ```
 
-Aggregate expansion is recursive — a module returned by `modules()` can itself be an aggregate. The same module-dedup guard used for `addModule()` protects against accidental cycles.
+Aggregate expansion is recursive — a module returned by `modules()` can itself be an aggregate.
+
+Each module class is only added once, and aggregates can safely share dependencies:
+
+- If an aggregate returns a module whose class has already been added, either directly with `addModule()` or by another aggregate, the returned instance is skipped instead of throwing. Packages can aggregate a common module (for example a logging module) without coordinating with each other or with your application.
+- A module you add directly always wins over the same class returned by an aggregate, regardless of the order of your `addModule()` calls, because aggregates are expanded after all direct additions. Construct and add a module yourself when you need to pass it your own constructor arguments.
+- Between aggregates, the first instance returned is kept.
+- Aggregates that return each other, directly or through nesting, are safe: a skipped aggregate isn't expanded again, so expansion always ends.
+- Adding the same module class directly twice is still an error and throws `ModuleException`.
 
 #### Boot Phase Order
 

@@ -168,32 +168,145 @@ class ModuleLoaderTest extends TestCase
         $this->assertTrue($registered);
     }
 
-    public function test_aggregate_throws_if_returned_module_already_directly_added(): void
+    /**
+     * Every call returns an instance of the same class, so two instances collide on
+     * module dedup; register() records the instance's label so tests can tell which one
+     * was kept.
+     *
+     * @param list<string> $log
+     */
+    private function labelledModule(string $label, array &$log): ModuleInterface
+    {
+        return new class($label, $log) implements ModuleInterface {
+            /** @param list<string> $log */
+            public function __construct(private string $label, private array &$log) {}
+            public function register(KernelInterface $kernel): void { $this->log[] = $this->label; }
+        };
+    }
+
+    public function test_aggregate_skips_a_module_already_added_directly(): void
     {
         $loader = new ModuleLoader();
-        $module = $this->createStub(ModuleInterface::class);
+        $kernel = $this->createStub(KernelInterface::class);
+        $log    = [];
 
-        $aggregate = new class($module) implements AggregateModuleInterface {
+        $direct     = $this->labelledModule('direct', $log);
+        $aggregated = $this->labelledModule('aggregated', $log);
+
+        $aggregate = new class($aggregated) implements AggregateModuleInterface {
             public function __construct(private ModuleInterface $module) {}
             public function register(KernelInterface $kernel): void {}
             public function modules(EnvironmentInterface $env): array { return [$this->module]; }
         };
 
-        $loader->add($module);
+        $loader->add($direct);
         $loader->add($aggregate);
-
-        $this->expectException(ModuleException::class);
-        $this->expectExceptionMessage(sprintf('Module [%s] has already been added', $module::class));
-
         $loader->load(new Testing());
+        $loader->register($kernel);
+
+        $this->assertSame(['direct'], $log);
+        $this->assertSame([$direct::class, $aggregate::class], $loader->getModules());
     }
 
-    public function test_aggregate_cycle_throws_on_the_repeated_module(): void
+    public function test_aggregate_keeps_the_directly_added_module_even_when_added_after_the_aggregate(): void
+    {
+        $loader = new ModuleLoader();
+        $kernel = $this->createStub(KernelInterface::class);
+        $log    = [];
+
+        $direct     = $this->labelledModule('direct', $log);
+        $aggregated = $this->labelledModule('aggregated', $log);
+
+        $aggregate = new class($aggregated) implements AggregateModuleInterface {
+            public function __construct(private ModuleInterface $module) {}
+            public function register(KernelInterface $kernel): void {}
+            public function modules(EnvironmentInterface $env): array { return [$this->module]; }
+        };
+
+        // Aggregates expand during load(), after every direct add, so registration
+        // order between the two direct add() calls doesn't change which instance wins.
+        $loader->add($aggregate);
+        $loader->add($direct);
+        $loader->load(new Testing());
+        $loader->register($kernel);
+
+        $this->assertSame(['direct'], $log);
+    }
+
+    public function test_two_aggregates_sharing_a_module_register_it_once(): void
+    {
+        $loader = new ModuleLoader();
+        $kernel = $this->createStub(KernelInterface::class);
+        $log    = [];
+
+        $first = new class($this->labelledModule('first', $log)) implements AggregateModuleInterface {
+            public function __construct(private ModuleInterface $module) {}
+            public function register(KernelInterface $kernel): void {}
+            public function modules(EnvironmentInterface $env): array { return [$this->module]; }
+        };
+
+        $second = new class($this->labelledModule('second', $log)) implements AggregateModuleInterface {
+            public function __construct(private ModuleInterface $module) {}
+            public function register(KernelInterface $kernel): void {}
+            public function modules(EnvironmentInterface $env): array { return [$this->module]; }
+        };
+
+        $loader->add($first);
+        $loader->add($second);
+        $loader->load(new Testing());
+        $loader->register($kernel);
+
+        $this->assertSame(['first'], $log);
+        $this->assertCount(3, $loader->getModules());
+    }
+
+    public function test_a_nested_aggregate_shared_by_two_aggregates_is_expanded_once(): void
+    {
+        $loader    = new ModuleLoader();
+        $kernel    = $this->createStub(KernelInterface::class);
+        $log       = [];
+        $expanded  = 0;
+
+        $makeInner = function () use (&$log, &$expanded): AggregateModuleInterface {
+            return new class($this->labelledModule('leaf', $log), $expanded) implements AggregateModuleInterface {
+                public function __construct(private ModuleInterface $leaf, private int &$expanded) {}
+                public function register(KernelInterface $kernel): void {}
+                public function modules(EnvironmentInterface $env): array
+                {
+                    $this->expanded++;
+
+                    return [$this->leaf];
+                }
+            };
+        };
+
+        $first = new class($makeInner()) implements AggregateModuleInterface {
+            public function __construct(private AggregateModuleInterface $inner) {}
+            public function register(KernelInterface $kernel): void {}
+            public function modules(EnvironmentInterface $env): array { return [$this->inner]; }
+        };
+
+        $second = new class($makeInner()) implements AggregateModuleInterface {
+            public function __construct(private AggregateModuleInterface $inner) {}
+            public function register(KernelInterface $kernel): void {}
+            public function modules(EnvironmentInterface $env): array { return [$this->inner]; }
+        };
+
+        $loader->add($first);
+        $loader->add($second);
+        $loader->load(new Testing());
+        $loader->register($kernel);
+
+        $this->assertSame(1, $expanded);
+        $this->assertSame(['leaf'], $log);
+    }
+
+    public function test_aggregate_cycle_terminates_and_registers_each_module_once(): void
     {
         $loader = new ModuleLoader();
 
-        // $a and $b return each other, forming a cycle; add()'s duplicate-class
-        // guard is what stops expansion from recursing forever.
+        // $a and $b return each other, forming a cycle. Expansion skips a module that's
+        // already added without recursing into it, so the cycle ends after one pass.
         $a = new class implements AggregateModuleInterface {
             public ?AggregateModuleInterface $other = null;
             public function register(KernelInterface $kernel): void {}
@@ -209,11 +322,9 @@ class ModuleLoaderTest extends TestCase
         $a->other = $b;
 
         $loader->add($a);
-
-        $this->expectException(ModuleException::class);
-        $this->expectExceptionMessage(sprintf('Module [%s] has already been added', $a::class));
-
         $loader->load(new Testing());
+
+        $this->assertSame([$a::class, $b::class], $loader->getModules());
     }
 
     public function test_aggregate_modules_contribute_config(): void
